@@ -13,6 +13,8 @@ chmod +x start.sh
 
 会启动 MySQL 并导入 `sql/01`、`sql/02`。有 `backend/`、`frontend/` 后会一并启动。
 
+**三人协作交接（给 A/B 看这个）：** [`docs/team-handoff.md`](docs/team-handoff.md)
+
 | 用途 | CloudStudio | 说明 |
 |------|-------------|------|
 | 今天建库、三人联调 | 推荐 | 课程《9-1》同款方案 |
