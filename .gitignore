@@ -28,3 +28,6 @@ _hash.txt
 _hash_err.txt
 _guide_extract.txt
 *.docx
+
+# Local Maven temp files
+backend/.mvn-tmp/
