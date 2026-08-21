@@ -1,0 +1,17 @@
+spring:
+  application:
+    name: xianyu
+  datasource:
+    url: jdbc:mysql://localhost:3306/campus_xianyu?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+
+server:
+  port: 8080
