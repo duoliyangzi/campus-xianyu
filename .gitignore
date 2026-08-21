@@ -27,3 +27,4 @@ _git_check.bat
 _hash.txt
 _hash_err.txt
 _guide_extract.txt
+*.docx
