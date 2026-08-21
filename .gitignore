@@ -1,0 +1,29 @@
+# 本地/容器数据与密钥
+mysql-data/
+.env
+**/application-local.yml
+**/application-secret.yml
+
+# IDE / OS
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Build
+**/target/
+**/dist/
+**/node_modules/
+*.log
+
+# 勿提交真实密码版账号脚本副本
+sql/00_create_users.local.sql
+
+# 临时/本地检查文件
+_out.txt
+_git_out.txt
+_git_check.bat
+_hash.txt
+_hash_err.txt
+_guide_extract.txt

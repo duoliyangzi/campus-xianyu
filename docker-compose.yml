@@ -1,0 +1,27 @@
+# 仅用于 Cloud Studio / 本地快速起 MySQL（开发库）
+# 生产或答辩公网更推荐轻量云主机；本文件方便今天先把库建起来。
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: campus-xianyu-mysql
+    restart: unless-stopped
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: root_change_me
+      MYSQL_DATABASE: campus_xianyu
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-authentication-plugin=mysql_native_password
+    volumes:
+      - ./mysql-data:/var/lib/mysql
+      - ./sql/01_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./sql/02_seed_data.sql:/docker-entrypoint-initdb.d/02_seed_data.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-proot_change_me"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
