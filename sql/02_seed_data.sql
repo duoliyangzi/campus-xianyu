@@ -20,17 +20,24 @@ INSERT INTO `campus` (`id`, `name`, `sort_order`, `status`) VALUES
 -- 商品分类（一级 + 周边二级）
 -- ----------------------------
 INSERT INTO `category` (`id`, `parent_id`, `name`, `sort_order`, `status`) VALUES
-(1,  0, '教材',     1, 'ENABLED'),
-(2,  0, '数码',     2, 'ENABLED'),
-(3,  0, '服饰',     3, 'ENABLED'),
-(4,  0, '生活用品', 4, 'ENABLED'),
-(5,  0, '运动用品', 5, 'ENABLED'),
-(6,  0, '周边',     6, 'ENABLED'),
-(7,  6, '海报',     1, 'ENABLED'),
-(8,  6, '吧唧',     2, 'ENABLED'),
-(9,  6, '应援服',   3, 'ENABLED'),
-(10, 6, '卡片',     4, 'ENABLED'),
-(11, 6, '手办',     5, 'ENABLED');
+(1,  0, '教材资料', 1,  'ENABLED'),
+(2,  0, '数码电子', 2,  'ENABLED'),
+(3,  0, '电脑外设', 3,  'ENABLED'),
+(4,  0, '宿舍电器', 4,  'ENABLED'),
+(5,  0, '生活日用', 5,  'ENABLED'),
+(6,  0, '服饰鞋包', 6,  'ENABLED'),
+(7,  0, '美妆护理', 7,  'ENABLED'),
+(8,  0, '运动户外', 8,  'ENABLED'),
+(9,  0, '文具办公', 9,  'ENABLED'),
+(10, 0, '卡券票务', 10, 'ENABLED'),
+(11, 0, '乐器文娱', 11, 'ENABLED'),
+(12, 0, '周边收藏', 12, 'ENABLED'),
+(13, 0, '其他闲置', 13, 'ENABLED'),
+(14, 12, '海报挂件', 1, 'ENABLED'),
+(15, 12, '吧唧徽章', 2, 'ENABLED'),
+(16, 12, '应援服饰', 3, 'ENABLED'),
+(17, 12, '卡片票根', 4, 'ENABLED'),
+(18, 12, '手办模型', 5, 'ENABLED');
 
 -- ----------------------------
 -- 举报原因

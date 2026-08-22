@@ -7,6 +7,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface UserRepository extends JpaRepository<AppUser, Long> {
     Optional<AppUser> findByUsername(String username);
 
+    Optional<AppUser> findByStudentNo(String studentNo);
+
     boolean existsByUsername(String username);
 
     List<AppUser> findByRoleAndAuthStatusOrderByUpdatedAtDesc(String role, String authStatus);

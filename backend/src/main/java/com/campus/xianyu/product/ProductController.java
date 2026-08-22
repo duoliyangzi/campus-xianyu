@@ -7,6 +7,8 @@ import com.campus.xianyu.user.AppUser;
 import com.campus.xianyu.user.UserRepository;
 import jakarta.validation.Valid;
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -29,14 +31,23 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/products")
 public class ProductController {
+    private static final int MAX_IMAGE_COUNT = 9;
+
     private final TokenService tokenService;
     private final UserRepository userRepository;
     private final ProductRepository productRepository;
+    private final ProductImageRepository productImageRepository;
 
-    public ProductController(TokenService tokenService, UserRepository userRepository, ProductRepository productRepository) {
+    public ProductController(
+            TokenService tokenService,
+            UserRepository userRepository,
+            ProductRepository productRepository,
+            ProductImageRepository productImageRepository
+    ) {
         this.tokenService = tokenService;
         this.userRepository = userRepository;
         this.productRepository = productRepository;
+        this.productImageRepository = productImageRepository;
     }
 
     @GetMapping
@@ -104,12 +115,15 @@ public class ProductController {
             @Valid @RequestBody ProductRequest request
     ) {
         AppUser user = requireApprovedStudent(authorization);
+        List<String> imageUrls = normalizeImageUrls(request);
         Product product = new Product();
-        fillProduct(product, request);
+        fillProduct(product, request, imageUrls);
         product.setSellerId(user.getId());
         product.setStatus("PENDING");
         product.setViewCount(0);
-        return ApiResponse.ok("商品已提交审核", ProductResponse.from(productRepository.save(product), user));
+        Product savedProduct = productRepository.save(product);
+        saveProductImages(savedProduct.getId(), imageUrls);
+        return ApiResponse.ok("商品已提交审核", ProductResponse.from(savedProduct, user, imageUrls));
     }
 
     @GetMapping("/mine")
@@ -130,7 +144,7 @@ public class ProductController {
         }
         AppUser seller = userRepository.findById(product.getSellerId())
                 .orElseThrow(() -> new IllegalArgumentException("卖家不存在"));
-        return ApiResponse.ok(ProductResponse.from(product, seller));
+        return ApiResponse.ok(ProductResponse.from(product, seller, imageUrlsFor(product.getId())));
     }
 
     @PutMapping("/{id}")
@@ -145,10 +159,13 @@ public class ProductController {
         if ("OFF_SHELF".equals(product.getStatus())) {
             throw new IllegalArgumentException("已下架商品不能修改");
         }
-        fillProduct(product, request);
+        List<String> imageUrls = normalizeImageUrls(request);
+        fillProduct(product, request, imageUrls);
         product.setStatus("PENDING");
         product.setAuditRemark(null);
-        return ApiResponse.ok("商品已更新并重新提交审核", ProductResponse.from(productRepository.save(product), user));
+        Product savedProduct = productRepository.save(product);
+        saveProductImages(savedProduct.getId(), imageUrls);
+        return ApiResponse.ok("商品已更新并重新提交审核", ProductResponse.from(savedProduct, user, imageUrls));
     }
 
     @PutMapping("/{id}/off-shelf")
@@ -160,7 +177,8 @@ public class ProductController {
         AppUser user = currentUser(authorization);
         Product product = ownedProduct(id, user.getId());
         product.setStatus("OFF_SHELF");
-        return ApiResponse.ok("商品已下架", ProductResponse.from(productRepository.save(product), user));
+        Product savedProduct = productRepository.save(product);
+        return ApiResponse.ok("商品已下架", ProductResponse.from(savedProduct, user, imageUrlsFor(savedProduct.getId())));
     }
 
 
@@ -177,9 +195,11 @@ public class ProductController {
         }
         product.setStatus("PENDING");
         product.setAuditRemark(null);
-        return ApiResponse.ok("商品已恢复并重新提交审核", ProductResponse.from(productRepository.save(product), user));
+        Product savedProduct = productRepository.save(product);
+        return ApiResponse.ok("商品已恢复并重新提交审核", ProductResponse.from(savedProduct, user, imageUrlsFor(savedProduct.getId())));
     }
-    private void fillProduct(Product product, ProductRequest request) {
+
+    private void fillProduct(Product product, ProductRequest request, List<String> imageUrls) {
         product.setTitle(request.title());
         product.setPrice(request.price());
         product.setCategoryId(request.categoryId());
@@ -187,7 +207,51 @@ public class ProductController {
         product.setCampusId(request.campusId());
         product.setTradeMethod(request.tradeMethod());
         product.setDescription(request.description());
-        product.setCoverUrl(request.coverUrl());
+        product.setCoverUrl(imageUrls.isEmpty() ? null : imageUrls.get(0));
+    }
+
+    private List<String> normalizeImageUrls(ProductRequest request) {
+        List<String> urls = new ArrayList<>();
+        if (request.imageUrls() != null) {
+            request.imageUrls().forEach(url -> {
+                if (url != null && !url.isBlank()) {
+                    urls.add(url.trim());
+                }
+            });
+        }
+        if (urls.isEmpty() && request.coverUrl() != null && !request.coverUrl().isBlank()) {
+            urls.add(request.coverUrl().trim());
+        }
+        List<String> distinctUrls = new ArrayList<>(new LinkedHashMap<String, Boolean>() {{
+            urls.forEach(url -> put(url, Boolean.TRUE));
+        }}.keySet());
+        if (distinctUrls.isEmpty()) {
+            throw new IllegalArgumentException("请至少上传一张商品图片");
+        }
+        if (distinctUrls.size() > MAX_IMAGE_COUNT) {
+            throw new IllegalArgumentException("商品图片最多上传9张");
+        }
+        return distinctUrls;
+    }
+
+    private void saveProductImages(Long productId, List<String> imageUrls) {
+        productImageRepository.deleteByProductId(productId);
+        List<ProductImage> images = new ArrayList<>();
+        for (int index = 0; index < imageUrls.size(); index++) {
+            ProductImage image = new ProductImage();
+            image.setProductId(productId);
+            image.setUrl(imageUrls.get(index));
+            image.setSortOrder(index);
+            images.add(image);
+        }
+        productImageRepository.saveAll(images);
+    }
+
+    private List<String> imageUrlsFor(Long productId) {
+        return productImageRepository.findByProductIdOrderBySortOrderAscIdAsc(productId)
+                .stream()
+                .map(ProductImage::getUrl)
+                .toList();
     }
 
     private Product ownedProduct(Long productId, Long sellerId) {
@@ -227,11 +291,26 @@ public class ProductController {
     }
 
     private List<ProductResponse> toResponses(List<Product> products) {
+        if (products.isEmpty()) {
+            return List.of();
+        }
         Map<Long, AppUser> sellers = userRepository.findAllById(
                         products.stream().map(Product::getSellerId).distinct().toList())
                 .stream().collect(Collectors.toMap(AppUser::getId, Function.identity()));
+        Map<Long, List<String>> imageUrlsByProduct = productImageRepository.findByProductIdInOrderByProductIdAscSortOrderAscIdAsc(
+                        products.stream().map(Product::getId).toList())
+                .stream()
+                .collect(Collectors.groupingBy(
+                        ProductImage::getProductId,
+                        LinkedHashMap::new,
+                        Collectors.mapping(ProductImage::getUrl, Collectors.toList())
+                ));
         return products.stream()
-                .map(product -> ProductResponse.from(product, sellers.get(product.getSellerId())))
+                .map(product -> ProductResponse.from(
+                        product,
+                        sellers.get(product.getSellerId()),
+                        imageUrlsByProduct.getOrDefault(product.getId(), List.of())
+                ))
                 .toList();
     }
 }

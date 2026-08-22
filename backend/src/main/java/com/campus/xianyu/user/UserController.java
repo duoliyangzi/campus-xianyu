@@ -45,6 +45,11 @@ public class UserController {
         if ("ADMIN".equals(user.getRole())) {
             throw new IllegalArgumentException("管理员账号无需学生认证");
         }
+        userRepository.findByStudentNo(request.studentNo())
+                .filter(existing -> !existing.getId().equals(user.getId()))
+                .ifPresent(existing -> {
+                    throw new IllegalArgumentException("该学号已被其他账号使用");
+                });
         user.setStudentNo(request.studentNo());
         user.setCollege(request.college());
         user.setAuthStatus("PENDING");
