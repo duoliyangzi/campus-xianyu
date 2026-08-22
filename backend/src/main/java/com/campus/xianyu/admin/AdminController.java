@@ -59,8 +59,9 @@ public class AdminController {
         if (!"STUDENT".equals(user.getRole())) {
             throw new IllegalArgumentException("只能审核学生账号");
         }
-        if (!"PENDING".equals(user.getAuthStatus())) {
-            throw new IllegalArgumentException("只能审核待审核申请");
+        if (user.getStudentNo() == null || user.getStudentNo().isBlank()
+                || user.getCollege() == null || user.getCollege().isBlank()) {
+            throw new IllegalArgumentException("该学生还没有提交实名认证信息");
         }
 
         user.setAuthStatus(request.authStatus());

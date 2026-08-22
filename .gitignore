@@ -31,3 +31,6 @@ _guide_extract.txt
 
 # Local Maven temp files
 backend/.mvn-tmp/
+
+# Runtime uploaded files
+backend/uploads/

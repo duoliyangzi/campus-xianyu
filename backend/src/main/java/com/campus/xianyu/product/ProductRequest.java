@@ -5,6 +5,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
+import java.util.List;
 
 public record ProductRequest(
         @NotBlank(message = "商品标题不能为空")
@@ -30,6 +31,8 @@ public record ProductRequest(
         @NotBlank(message = "图文描述不能为空")
         String description,
 
-        String coverUrl
+        String coverUrl,
+
+        List<String> imageUrls
 ) {
 }

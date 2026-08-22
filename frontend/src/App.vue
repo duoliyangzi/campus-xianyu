@@ -11,8 +11,11 @@ const errorMessage = ref('')
 const loading = ref(false)
 const activeStudentTab = ref('profile')
 const activeAdminTab = ref('authReview')
+const authReviewStatus = ref('PENDING')
 const authApplications = ref([])
 const adminLoading = ref(false)
+const imageUploading = ref(false)
+const previewImageUrl = ref('')
 const categories = ref([])
 const campuses = ref([])
 const myProducts = ref([])
@@ -41,6 +44,18 @@ const confirmDialog = reactive({
   action: null
 })
 
+const noticeDialog = reactive({
+  visible: false,
+  type: 'info',
+  title: '',
+  content: ''
+})
+const authRemarkDialog = reactive({
+  visible: false,
+  application: null,
+  status: '',
+  remark: ''
+})
 const currentUser = reactive({
   id: null,
   username: '',
@@ -64,6 +79,7 @@ const productForm = reactive({
   campusId: '',
   tradeMethod: '',
   coverUrl: '',
+  imageUrls: [],
   description: ''
 })
 const wantedForm = reactive({ itemName: '', budget: '', expectCondition: '', campusId: '', description: '' })
@@ -89,6 +105,11 @@ const adminTabs = [
   { key: 'categories', label: '分类管理', owner: 'C' }
 ]
 
+const authReviewTabs = [
+  { key: 'PENDING', label: '待审核' },
+  { key: 'APPROVED', label: '已通过' },
+  { key: 'REJECTED', label: '未通过' }
+]
 const conditionOptions = [
   { value: 'NEW', label: '全新' },
   { value: 'LIKE_NEW', label: '几乎全新' },
@@ -106,6 +127,17 @@ const tradeMethodOptions = [
 const pageTitle = computed(() => (mode.value === 'login' ? '欢迎回来' : '创建学生账号'))
 const isAdmin = computed(() => currentUser.role === 'ADMIN')
 const isApprovedStudent = computed(() => currentUser.role === 'STUDENT' && currentUser.authStatus === 'APPROVED')
+const passwordRequirements = computed(() => [
+  { key: 'length', label: '不少于 8 个字符', passed: registerForm.password.length >= 8 },
+  { key: 'lower', label: '包含小写字母', passed: /[a-z]/.test(registerForm.password) },
+  { key: 'upper', label: '包含大写字母', passed: /[A-Z]/.test(registerForm.password) },
+  { key: 'number', label: '包含数字', passed: /\d/.test(registerForm.password) }
+])
+const isRegisterPasswordValid = computed(() => passwordRequirements.value.every((item) => item.passed))
+const confirmPasswordError = computed(() => {
+  if (!registerForm.confirmPassword) return ''
+  return registerForm.password === registerForm.confirmPassword ? '' : '两次输入的密码不一致'
+})
 
 const authStatusText = computed(() => {
   const statusMap = {
@@ -122,9 +154,27 @@ const authStatusClass = computed(() => `status-${String(currentUser.authStatus |
 const studentHeaderTitle = computed(() => studentTabs.find((item) => item.key === activeStudentTab.value)?.label || '校园二手')
 const adminHeaderTitle = computed(() => adminTabs.find((item) => item.key === activeAdminTab.value)?.label || '平台管理')
 
+function showNotice({ type = 'info', title = '提示', content = '' }) {
+  noticeDialog.visible = true
+  noticeDialog.type = type
+  noticeDialog.title = title
+  noticeDialog.content = content
+}
+
+function closeNoticeDialog() {
+  noticeDialog.visible = false
+  noticeDialog.type = 'info'
+  noticeDialog.title = ''
+  noticeDialog.content = ''
+}
 function clearNotice() {
   message.value = ''
   errorMessage.value = ''
+}
+
+function resetLoginForm() {
+  loginForm.username = ''
+  loginForm.password = ''
 }
 
 function updateCurrentUser(user) {
@@ -199,7 +249,7 @@ async function loadDictionaries() {
     categories.value = categoryData
     campuses.value = campusData
   } catch (error) {
-    errorMessage.value = error.message
+    showNotice({ type: 'error', title: '操作失败', content: error.message })
   }
 }
 
@@ -209,7 +259,7 @@ async function loadMyProducts() {
   try {
     myProducts.value = await apiRequest('/products/mine')
   } catch (error) {
-    errorMessage.value = error.message
+    showNotice({ type: 'error', title: '操作失败', content: error.message })
   }
 }
 
@@ -229,7 +279,7 @@ async function loadProducts(page = 0) {
   } catch (error) {
     products.value = []
     Object.assign(productPage, { page: 0, totalPages: 0, totalElements: 0, first: true, last: true })
-    errorMessage.value = error.message
+    showNotice({ type: 'error', title: '操作失败', content: error.message })
   }
 }
 
@@ -243,7 +293,7 @@ async function openProductDetail(product) {
   try {
     selectedProduct.value = await apiRequest(`/products/${product.id}`)
   } catch (error) {
-    errorMessage.value = error.message
+    showNotice({ type: 'error', title: '操作失败', content: error.message })
   }
 }
 
@@ -270,7 +320,7 @@ async function loadWanted(page = 0) {
   } catch (error) {
     wantedItems.value = []
     Object.assign(wantedPage, { page: 0, totalPages: 0, totalElements: 0, first: true, last: true })
-    errorMessage.value = error.message
+    showNotice({ type: 'error', title: '操作失败', content: error.message })
   }
 }
 
@@ -279,7 +329,7 @@ async function loadMyWanted() {
   try {
     myWanted.value = await apiRequest('/wanted/mine')
   } catch (error) {
-    errorMessage.value = error.message
+    showNotice({ type: 'error', title: '操作失败', content: error.message })
   }
 }
 
@@ -343,7 +393,7 @@ async function submitWanted() {
     activeMyTab.value = 'wanted'
     await Promise.all([loadWanted(0), loadMyWanted()])
   } catch (error) {
-    errorMessage.value = error.message
+    showNotice({ type: 'error', title: '操作失败', content: error.message })
   } finally {
     loading.value = false
   }
@@ -357,7 +407,7 @@ async function changeWantedStatus(item, action) {
     message.value = action === 'match' ? '已标记为找到卖家。' : '求购已关闭。'
     await Promise.all([loadWanted(wantedPage.page), loadMyWanted()])
   } catch (error) {
-    errorMessage.value = error.message
+    showNotice({ type: 'error', title: '操作失败', content: error.message })
   } finally {
     loading.value = false
   }
@@ -368,7 +418,7 @@ async function openWantedDetail(item) {
   try {
     selectedWanted.value = await apiRequest(`/wanted/${item.id}`)
   } catch (error) {
-    errorMessage.value = error.message
+    showNotice({ type: 'error', title: '操作失败', content: error.message })
   }
 }
 
@@ -393,7 +443,7 @@ async function openPublicProfile(userId) {
     profileWanted.value = wantedData.content
   } catch (error) {
     publicProfile.value = null
-    errorMessage.value = error.message
+    showNotice({ type: 'error', title: '操作失败', content: error.message })
   } finally {
     profileLoading.value = false
   }
@@ -417,10 +467,25 @@ function switchMode(nextMode) {
   clearNotice()
 }
 
+function validatePasswordStrength(password) {
+  if (password.length < 8) return '密码不少于 8 个字符'
+  if (!/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/\d/.test(password)) {
+    return '密码至少包含大写字母、小写字母和数字'
+  }
+  return ''
+}
+
+function friendlyLoginError(messageText) {
+  if (messageText.includes('用户名或密码')) {
+    return '用户名或密码错误，请检查账号密码；如果还没有账号，请先注册。'
+  }
+  return messageText
+}
+
 async function handleLogin() {
   clearNotice()
   if (!loginForm.username || !loginForm.password) {
-    errorMessage.value = '请输入用户名和密码'
+    showNotice({ type: 'error', title: '登录失败', content: '请输入用户名和密码。' })
     return
   }
 
@@ -434,7 +499,7 @@ async function handleLogin() {
     updateCurrentUser(data.user)
     enterAppByRole()
   } catch (error) {
-    errorMessage.value = error.message
+    showNotice({ type: 'error', title: '登录失败', content: friendlyLoginError(error.message) })
   } finally {
     loading.value = false
   }
@@ -443,11 +508,11 @@ async function handleLogin() {
 async function handleRegister() {
   clearNotice()
   if (!registerForm.username || !registerForm.password || !registerForm.confirmPassword) {
-    errorMessage.value = '请填写用户名、密码和确认密码'
+    showNotice({ type: 'error', title: '注册失败', content: '请填写用户名、密码和确认密码。' })
     return
   }
-  if (registerForm.password !== registerForm.confirmPassword) {
-    errorMessage.value = '两次输入的密码不一致'
+  const passwordError = validatePasswordStrength(registerForm.password)
+  if (passwordError || registerForm.password !== registerForm.confirmPassword) {
     return
   }
 
@@ -467,9 +532,9 @@ async function handleRegister() {
     registerForm.password = ''
     registerForm.confirmPassword = ''
     mode.value = 'login'
-    message.value = '注册成功，请用刚才的账号登录。'
+    showNotice({ type: 'success', title: '注册成功', content: '请用刚才的账号登录。' })
   } catch (error) {
-    errorMessage.value = error.message
+    showNotice({ type: 'error', title: '注册失败', content: error.message })
   } finally {
     loading.value = false
   }
@@ -500,7 +565,7 @@ async function submitStudentAuth() {
     page.value = 'studentApp'
     activeStudentTab.value = 'profile'
   } catch (error) {
-    errorMessage.value = error.message
+    showNotice({ type: 'error', title: '操作失败', content: error.message })
   } finally {
     loading.value = false
   }
@@ -510,12 +575,18 @@ async function loadAuthApplications() {
   if (!isAdmin.value) return
   adminLoading.value = true
   try {
-    authApplications.value = await apiRequest('/admin/auth-applications?status=PENDING')
+    authApplications.value = await apiRequest(`/admin/auth-applications?status=${authReviewStatus.value}`)
   } catch (error) {
-    errorMessage.value = error.message
+    showNotice({ type: 'error', title: '操作失败', content: error.message })
   } finally {
     adminLoading.value = false
   }
+}
+
+function switchAuthReviewStatus(status) {
+  authReviewStatus.value = status
+  clearNotice()
+  loadAuthApplications()
 }
 
 function selectAdminTab(tabKey) {
@@ -525,7 +596,27 @@ function selectAdminTab(tabKey) {
   }
 }
 
-async function reviewAuth(application, status) {
+function openAuthRemarkDialog(application, status = application.authStatus) {
+  clearNotice()
+  authRemarkDialog.visible = true
+  authRemarkDialog.application = application
+  authRemarkDialog.status = status
+  authRemarkDialog.remark = application.authRemark || ''
+}
+
+function closeAuthRemarkDialog() {
+  authRemarkDialog.visible = false
+  authRemarkDialog.application = null
+  authRemarkDialog.status = ''
+  authRemarkDialog.remark = ''
+}
+
+async function submitAuthRemarkReview() {
+  if (!authRemarkDialog.application || !authRemarkDialog.status) return
+  await reviewAuth(authRemarkDialog.application, authRemarkDialog.status, authRemarkDialog.remark)
+  closeAuthRemarkDialog()
+}
+async function reviewAuth(application, status, remark = null) {
   clearNotice()
   adminLoading.value = true
   try {
@@ -533,28 +624,30 @@ async function reviewAuth(application, status) {
       method: 'POST',
       body: JSON.stringify({
         authStatus: status,
-        authRemark: status === 'APPROVED' ? '实名认证审核通过' : '实名认证审核未通过'
+        authRemark: remark && remark.trim() ? remark.trim() : (status === 'APPROVED' ? '实名认证审核通过' : '实名认证审核未通过')
       })
     })
-    message.value = status === 'APPROVED' ? '已通过该学生认证。' : '已拒绝该学生认证。'
+    message.value = status === 'APPROVED' ? '已将该学生认证改为通过。' : '已将该学生认证改为不通过。'
     await loadAuthApplications()
   } catch (error) {
-    errorMessage.value = error.message
+    showNotice({ type: 'error', title: '操作失败', content: error.message })
   } finally {
     adminLoading.value = false
   }
 }
 
 function validateProductForm() {
-  if (!productForm.title || !productForm.price || !productForm.categoryId || !productForm.conditionLevel || !productForm.campusId || !productForm.tradeMethod || !productForm.description) {
-    return '请补全商品标题、价格、分类、新旧程度、校区、交易方式和图文描述'
-  }
-  if (Number(productForm.price) <= 0) {
-    return '商品价格必须大于 0'
-  }
+  if (!productForm.title) return '请填写商品标题'
+  if (!productForm.price) return '请填写商品价格'
+  if (Number(productForm.price) <= 0) return '商品价格必须大于 0'
+  if (!productForm.categoryId) return '请选择商品分类'
+  if (!productForm.conditionLevel) return '请选择新旧程度'
+  if (!productForm.campusId) return '请选择校区'
+  if (!productForm.tradeMethod) return '请选择交易方式'
+  if (productForm.imageUrls.length === 0) return '请至少上传一张商品图片'
+  if (!productForm.description) return '请填写商品描述'
   return ''
 }
-
 function resetProductForm() {
   editingProductId.value = null
   productForm.title = ''
@@ -564,14 +657,99 @@ function resetProductForm() {
   productForm.campusId = ''
   productForm.tradeMethod = ''
   productForm.coverUrl = ''
+  productForm.imageUrls.splice(0)
   productForm.description = ''
+}
+
+async function uploadProductImage(event) {
+  const files = Array.from(event.target.files || [])
+  await addProductImages(files)
+  event.target.value = ''
+}
+
+async function uploadImageFile(file) {
+  if (!file) return ''
+  if (!file.type.startsWith('image/')) {
+    showNotice({ type: 'error', title: '图片格式不支持', content: '只能上传图片文件。' })
+    return ''
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    showNotice({ type: 'error', title: '图片过大', content: '图片大小不能超过 5MB。' })
+    return ''
+  }
+
+  const formData = new FormData()
+  formData.append('file', file)
+  const token = localStorage.getItem(TOKEN_KEY)
+  const response = await fetch(`${API_BASE}/uploads/images`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: formData
+  })
+  const result = await response.json().catch(() => null)
+  if (!response.ok || !result || result.code !== 0) {
+    throw new Error(result?.message || `上传失败：${response.status}`)
+  }
+  return result.data.url
+}
+
+async function addProductImages(files) {
+  clearNotice()
+  if (!files.length) return
+  const remainingCount = 9 - productForm.imageUrls.length
+  if (remainingCount <= 0) {
+    showNotice({ type: 'error', title: '图片数量已满', content: '商品图片最多上传 9 张。' })
+    return
+  }
+
+  imageUploading.value = true
+  try {
+    const selectedFiles = files.slice(0, remainingCount)
+    const uploadedUrls = []
+    for (const file of selectedFiles) {
+      const url = await uploadImageFile(file)
+      if (url) uploadedUrls.push(url)
+    }
+    if (uploadedUrls.length) {
+      productForm.imageUrls.push(...uploadedUrls)
+      productForm.coverUrl = productForm.imageUrls[0] || ''
+      showNotice({
+        type: 'success',
+        title: '图片上传成功',
+        content: `已添加 ${uploadedUrls.length} 张图片，可以点击缩略图查看。`
+      })
+    }
+    if (files.length > selectedFiles.length) {
+      showNotice({ type: 'error', title: '图片数量已满', content: '商品图片最多上传 9 张，多出的图片没有上传。' })
+    }
+  } catch (error) {
+    showNotice({ type: 'error', title: '操作失败', content: error.message })
+  } finally {
+    imageUploading.value = false
+  }
+}
+
+async function handleImagePaste(event) {
+  const imageFiles = Array.from(event.clipboardData?.files || []).filter((file) => file.type.startsWith('image/'))
+  if (imageFiles.length) {
+    event.preventDefault()
+    await addProductImages(imageFiles)
+  }
+}
+function removeProductImage(index) {
+  productForm.imageUrls.splice(index, 1)
+  productForm.coverUrl = productForm.imageUrls[0] || ''
+}
+function clearProductImages() {
+  productForm.imageUrls.splice(0)
+  productForm.coverUrl = ''
 }
 
 async function submitProduct() {
   clearNotice()
   const validationError = validateProductForm()
   if (validationError) {
-    errorMessage.value = validationError
+    showNotice({ type: 'error', title: '请补全商品信息', content: validationError })
     return
   }
 
@@ -584,7 +762,8 @@ async function submitProduct() {
       conditionLevel: productForm.conditionLevel,
       campusId: Number(productForm.campusId),
       tradeMethod: productForm.tradeMethod,
-      coverUrl: productForm.coverUrl || null,
+      coverUrl: productForm.imageUrls[0] || null,
+      imageUrls: [...productForm.imageUrls],
       description: productForm.description
     }
 
@@ -593,19 +772,19 @@ async function submitProduct() {
         method: 'PUT',
         body: JSON.stringify(payload)
       })
-      message.value = '商品已更新，并重新提交审核。'
+      showNotice({ type: 'success', title: '保存成功', content: '商品已更新，并重新提交审核。' })
     } else {
       await apiRequest('/products', {
         method: 'POST',
         body: JSON.stringify(payload)
       })
-      message.value = '商品已发布，等待管理员审核。'
+      showNotice({ type: 'success', title: '发布成功', content: '商品已发布，等待管理员审核。' })
     }
 
     resetProductForm()
     await loadMyProducts()
   } catch (error) {
-    errorMessage.value = error.message
+    showNotice({ type: 'error', title: '操作失败', content: error.message })
   } finally {
     loading.value = false
   }
@@ -620,7 +799,9 @@ function editProduct(product) {
   productForm.conditionLevel = product.conditionLevel
   productForm.campusId = String(product.campusId)
   productForm.tradeMethod = product.tradeMethod
-  productForm.coverUrl = product.coverUrl || ''
+  const imageUrls = productImageUrls(product)
+  productForm.coverUrl = imageUrls[0] || ''
+  productForm.imageUrls.splice(0, productForm.imageUrls.length, ...imageUrls)
   productForm.description = product.description
   activeStudentTab.value = 'publish'
 }
@@ -666,7 +847,7 @@ async function offShelfProduct(product) {
     message.value = '商品已下架。'
     await loadMyProducts()
   } catch (error) {
-    errorMessage.value = error.message
+    showNotice({ type: 'error', title: '操作失败', content: error.message })
   } finally {
     loading.value = false
   }
@@ -689,10 +870,23 @@ async function restoreProduct(product) {
     message.value = '商品已恢复，并重新提交审核。'
     await loadMyProducts()
   } catch (error) {
-    errorMessage.value = error.message
+    showNotice({ type: 'error', title: '操作失败', content: error.message })
   } finally {
     loading.value = false
   }
+}
+
+function productImageUrls(product) {
+  if (Array.isArray(product?.imageUrls) && product.imageUrls.length > 0) return product.imageUrls
+  return product?.coverUrl ? [product.coverUrl] : []
+}
+
+function firstProductImage(product) {
+  return productImageUrls(product)[0] || ''
+}
+
+function extraProductImageCount(product) {
+  return Math.max(productImageUrls(product).length - 4, 0)
 }
 
 function getCategoryName(id) {
@@ -711,6 +905,9 @@ function getTradeMethodLabel(value) {
   return tradeMethodOptions.find((item) => item.value === value)?.label || value
 }
 
+function getAuthStatusLabel(value) {
+  return authReviewTabs.find((item) => item.key === value)?.label || value
+}
 function getProductStatusLabel(value) {
   return {
     PENDING: '待审核',
@@ -733,7 +930,7 @@ function logout() {
   page.value = 'auth'
   mode.value = 'login'
   clearNotice()
-  loginForm.password = ''
+  resetLoginForm()
   myProducts.value = []
   products.value = []
   wantedItems.value = []
@@ -763,10 +960,10 @@ onMounted(loadMe)
         <button type="button" :class="{ active: mode === 'register' }" @click="switchMode('register')">注册</button>
       </div>
 
-      <form v-if="mode === 'login'" class="form" @submit.prevent="handleLogin">
+      <form v-if="mode === 'login'" class="form" autocomplete="off" @submit.prevent="handleLogin">
         <h2>{{ pageTitle }}</h2>
-        <label>用户名<input v-model.trim="loginForm.username" type="text" autocomplete="username" placeholder="请输入用户名" /></label>
-        <label>密码<input v-model="loginForm.password" type="password" autocomplete="current-password" placeholder="请输入密码" /></label>
+        <label>用户名<input v-model.trim="loginForm.username" type="text" autocomplete="off" placeholder="请输入用户名" /></label>
+        <label>密码<input v-model="loginForm.password" type="password" autocomplete="off" placeholder="请输入密码" /></label>
         <button class="primary-button" type="submit" :disabled="loading">{{ loading ? '登录中...' : '登录' }}</button>
         <p class="hint">管理员测试账号：admin / password。学生账号可先注册再登录。</p>
       </form>
@@ -776,10 +973,14 @@ onMounted(loadMe)
         <label>用户名<input v-model.trim="registerForm.username" type="text" autocomplete="username" placeholder="设置登录用户名" /></label>
         <label>昵称<input v-model.trim="registerForm.nickname" type="text" placeholder="例如：小鱼同学" /></label>
         <label>手机号<input v-model.trim="registerForm.phone" type="tel" autocomplete="tel" placeholder="选填" /></label>
-        <label>密码<input v-model="registerForm.password" type="password" autocomplete="new-password" placeholder="设置密码" /></label>
-        <label>确认密码<input v-model="registerForm.confirmPassword" type="password" autocomplete="new-password" placeholder="再次输入密码" /></label>
-        <button class="primary-button" type="submit" :disabled="loading">{{ loading ? '注册中...' : '注册学生账号' }}</button>
-      </form>
+        <label class="field-group">密码<input v-model="registerForm.password" type="password" autocomplete="new-password" placeholder="设置密码" /></label>
+        <div class="password-rule-panel" aria-live="polite">
+          <p>密码要求</p>
+          <span v-for="item in passwordRequirements" :key="item.key" :class="['password-rule', { passed: item.passed }]">{{ item.passed ? '✓' : '·' }} {{ item.label }}</span>
+        </div>
+        <label class="field-group">确认密码<input v-model="registerForm.confirmPassword" type="password" autocomplete="new-password" placeholder="再次输入密码" /></label>
+        <p v-if="confirmPasswordError" class="field-error">{{ confirmPasswordError }}</p>
+        <button class="primary-button" type="submit" :disabled="loading || !isRegisterPasswordValid || !!confirmPasswordError">{{ loading ? '注册中...' : '注册学生账号' }}</button>      </form>
 
       <p v-if="message" class="message">{{ message }}</p>
       <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
@@ -812,7 +1013,7 @@ onMounted(loadMe)
           <div v-if="products.length === 0" class="empty-state">暂无符合条件的已发布商品</div>
           <div class="card-grid">
             <article v-for="product in products" :key="product.id" class="market-card" @click="openProductDetail(product)">
-              <img v-if="product.coverUrl" :src="product.coverUrl" :alt="product.title" />
+              <img v-if="firstProductImage(product)" :src="firstProductImage(product)" :alt="product.title" />
               <div v-else class="image-placeholder">闲</div>
               <div class="market-info"><strong>{{ product.title }}</strong><b>￥{{ product.price }}</b><p>{{ getCategoryName(product.categoryId) }} · {{ getCampusName(product.campusId) }}</p><span>{{ getConditionLabel(product.conditionLevel) }} · {{ getTradeMethodLabel(product.tradeMethod) }}</span><button v-if="product.seller" class="publisher-mini" type="button" @click.stop="openPublicProfile(product.seller.id)"><img v-if="product.seller.avatarUrl" :src="product.seller.avatarUrl" alt="" /><span v-else>{{ avatarText(product.seller) }}</span><em>{{ product.seller.nickname }}</em></button></div>
             </article>
@@ -856,7 +1057,10 @@ onMounted(loadMe)
           <p v-if="!isApprovedStudent" class="intro">发布商品需要先通过学生实名认证。当前状态：{{ authStatusText }}</p>
           <button v-if="!isApprovedStudent" class="primary-button" type="button" @click="openAuthPage">去实名认证</button>
 
-          <form v-else class="form" @submit.prevent="submitProduct">
+          <p v-if="message" class="message form-alert">{{ message }}</p>
+          <p v-if="errorMessage" class="error-message form-alert">{{ errorMessage }}</p>
+
+          <form v-if="isApprovedStudent" class="form" @submit.prevent="submitProduct">
             <label>标题<input v-model.trim="productForm.title" type="text" placeholder="例如：高等数学教材" /></label>
             <label>价格<input v-model.trim="productForm.price" type="number" inputmode="decimal" min="0" step="0.01" placeholder="例如：25" /></label>
             <label>分类
@@ -883,14 +1087,27 @@ onMounted(loadMe)
                 <option v-for="item in tradeMethodOptions" :key="item.value" :value="item.value">{{ item.label }}</option>
               </select>
             </label>
-            <label>封面图片链接（选填）<input v-model.trim="productForm.coverUrl" type="url" placeholder="例如：https://example.com/photo.jpg" /></label>
-            <p class="hint">当前版本暂未提供图片上传，可粘贴一张网络图片的完整链接。</p>
+            <label>商品图片</label>
+            <div class="image-upload-box" tabindex="0" @paste="handleImagePaste">
+              <input id="product-image-file" class="visually-hidden" type="file" accept="image/*" multiple @change="uploadProductImage" />
+              <label class="upload-button" for="product-image-file">{{ imageUploading ? '上传中...' : '选择本地图片' }}</label>
+              <span>{{ productForm.imageUrls.length ? '已上传 ' + productForm.imageUrls.length + ' 张图片，可继续添加或点击下方查看' : '支持一次选择多张图片，或先复制图片后在这里 Ctrl+V 粘贴' }}</span>
+            </div>
+
+            <div v-if="productForm.imageUrls.length" class="upload-preview-grid">
+              <article v-for="(imageUrl, index) in productForm.imageUrls" :key="imageUrl" class="upload-preview-item">
+                <button class="preview-image-button" type="button" @click="previewImageUrl = imageUrl">
+                  <img :src="imageUrl" :alt="`商品图片 ${index + 1}`" />
+                </button>
+                <button class="remove-image-button" type="button" @click="removeProductImage(index)">删除</button>
+              </article>
+              <button class="clear-images-button" type="button" @click="clearProductImages">清空全部图片</button>
+            </div>
+            <p class="hint upload-hint">支持 jpg、png、webp、gif，单张不超过 5MB。</p>
             <label>商品描述<textarea v-model.trim="productForm.description" rows="4" placeholder="描述物品情况、交易地点、购买时间等"></textarea></label>
-            <button class="primary-button" type="submit" :disabled="loading">{{ loading ? '提交中...' : (editingProductId ? '保存修改' : '提交商品') }}</button>
+            <button class="primary-button" type="submit" :disabled="loading || imageUploading">{{ imageUploading ? '图片上传中...' : (loading ? '提交中...' : (editingProductId ? '保存修改' : '提交商品')) }}</button>
             <button v-if="editingProductId" class="secondary-button" type="button" @click="resetProductForm">取消修改</button>
           </form>
-          <p v-if="message" class="message">{{ message }}</p>
-          <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
         </section>
 
         <section v-else-if="activeStudentTab === 'messages'" class="panel">
@@ -932,8 +1149,13 @@ onMounted(loadMe)
 
             <template v-if="activeMyTab === 'products'">
               <div v-if="myProducts.length === 0" class="empty-state">还没有发布商品</div>
-              <article v-for="product in myProducts" :key="product.id" class="product-card">
-                <div><strong>{{ product.title }}</strong><p>￥{{ product.price }} · {{ getCategoryName(product.categoryId) }} · {{ getCampusName(product.campusId) }}</p><p>{{ getConditionLabel(product.conditionLevel) }} · {{ getTradeMethodLabel(product.tradeMethod) }}</p></div>
+              <article v-for="product in myProducts" :key="product.id" class="product-card my-product-card">
+                <div v-if="productImageUrls(product).length" class="my-product-thumbs">
+                  <button v-for="imageUrl in productImageUrls(product).slice(0, 4)" :key="imageUrl" class="my-product-thumb" type="button" @click="previewImageUrl = imageUrl"><img :src="imageUrl" :alt="product.title" /></button>
+                  <span v-if="extraProductImageCount(product)" class="image-count-badge">+{{ extraProductImageCount(product) }}</span>
+                </div>
+                <div v-else class="my-product-thumbs"><div class="image-placeholder small">闲</div></div>
+                <div class="my-product-info"><strong>{{ product.title }}</strong><p>￥{{ product.price }} · {{ getCategoryName(product.categoryId) }} · {{ getCampusName(product.campusId) }}</p><p>{{ getConditionLabel(product.conditionLevel) }} · {{ getTradeMethodLabel(product.tradeMethod) }}</p></div>
                 <span :class="['status-pill', `status-${product.status.toLowerCase().replace('_', '-')}`]">{{ getProductStatusLabel(product.status) }}</span>
                 <p v-if="product.status === 'REJECTED' && product.auditRemark" class="audit-reason"><strong>未通过原因：</strong>{{ product.auditRemark }}</p><p class="product-desc">{{ product.description }}</p>
                 <div class="review-actions"><button type="button" @click="editProduct(product)">修改</button><button v-if="product.status !== 'OFF_SHELF'" type="button" @click="askOffShelfProduct(product)">下架</button><button v-else type="button" @click="askRestoreProduct(product)">恢复上架</button></div>
@@ -977,24 +1199,28 @@ onMounted(loadMe)
       <div class="app-content">
         <section v-if="activeAdminTab === 'authReview'" class="panel">
           <h2>学生认证审核</h2>
-          <p class="intro">这里显示数据库中已提交实名认证、状态为待审核的学生。</p>
+          <p class="intro">按状态查看学生实名认证申请；已审核记录也可以再次调整为通过或不通过。</p>
+          <div class="tabs auth-review-tabs" aria-label="认证审核状态筛选">
+            <button v-for="item in authReviewTabs" :key="item.key" type="button" :class="{ active: authReviewStatus === item.key }" @click="switchAuthReviewStatus(item.key)">{{ item.label }}</button>
+          </div>
           <p v-if="message" class="message">{{ message }}</p>
           <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
           <div v-if="adminLoading" class="empty-state">正在加载...</div>
-          <div v-else-if="authApplications.length === 0" class="empty-state">暂无待审核认证</div>
+          <div v-else-if="authApplications.length === 0" class="empty-state">暂无{{ getAuthStatusLabel(authReviewStatus) }}认证</div>
           <article v-else v-for="item in authApplications" :key="item.id" class="review-card">
             <div>
               <strong>{{ item.nickname }}</strong>
               <p>{{ item.username }} · {{ item.studentNo }} · {{ item.college }}</p>
+              <p v-if="item.authRemark">审核备注：{{ item.authRemark }}</p>
             </div>
-            <div class="review-actions">
-              <button type="button" @click="reviewAuth(item, 'APPROVED')">通过</button>
-              <button type="button" @click="reviewAuth(item, 'REJECTED')">拒绝</button>
+            <div class="review-actions auth-actions">
+              <button v-if="item.authStatus !== 'APPROVED'" type="button" @click="reviewAuth(item, 'APPROVED')">通过</button>
+              <button v-if="item.authStatus !== 'REJECTED'" type="button" @click="reviewAuth(item, 'REJECTED')">不通过</button>
+              <button type="button" @click="openAuthRemarkDialog(item)">备注</button>
             </div>
-            <span :class="['status-pill', `status-${item.authStatus.toLowerCase()}`]">{{ item.authStatus }}</span>
+            <span :class="['status-pill', `status-${item.authStatus.toLowerCase()}`]">{{ getAuthStatusLabel(item.authStatus) }}</span>
           </article>
         </section>
-
         <section v-else class="panel">
           <h2>{{ adminHeaderTitle }}</h2>
           <p class="intro">该管理功能由 {{ adminTabs.find((item) => item.key === activeAdminTab)?.owner }} 同学后续开发。</p>
@@ -1022,6 +1248,15 @@ onMounted(loadMe)
       <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
     </section>
 
+    <div v-if="noticeDialog.visible" class="confirm-overlay" role="dialog" aria-modal="true" @click.self="closeNoticeDialog">
+      <article :class="['notice-dialog', noticeDialog.type]">
+        <h2>{{ noticeDialog.title }}</h2>
+        <p>{{ noticeDialog.content }}</p>
+        <div class="confirm-actions">
+          <button class="primary-button" type="button" @click="closeNoticeDialog">知道了</button>
+        </div>
+      </article>
+    </div>
     <div v-if="confirmDialog.visible" class="confirm-overlay" role="dialog" aria-modal="true">
       <div class="confirm-dialog">
         <h2>{{ confirmDialog.title }}</h2>
@@ -1033,8 +1268,32 @@ onMounted(loadMe)
       </div>
     </div>
 
+    <div v-if="authRemarkDialog.visible" class="confirm-overlay" role="dialog" aria-modal="true" @click.self="closeAuthRemarkDialog">
+      <form class="remark-dialog" @submit.prevent="submitAuthRemarkReview">
+        <h2>审核备注</h2>
+        <p>为该学生补充审核说明，也可以在这里调整认证状态。</p>
+        <label>认证状态
+          <select v-model="authRemarkDialog.status">
+            <option value="APPROVED">已通过</option>
+            <option value="REJECTED">未通过</option>
+          </select>
+        </label>
+        <label>备注内容<textarea v-model.trim="authRemarkDialog.remark" rows="4" maxlength="255" placeholder="选填，例如：材料清晰，审核通过"></textarea></label>
+        <div class="confirm-actions">
+          <button class="secondary-button" type="button" @click="closeAuthRemarkDialog">取消</button>
+          <button class="primary-button" type="submit" :disabled="adminLoading">保存备注</button>
+        </div>
+      </form>
+    </div>
+
+    <div v-if="previewImageUrl" class="confirm-overlay image-lightbox" role="dialog" aria-modal="true" @click.self="previewImageUrl = ''">
+      <article class="image-lightbox-dialog">
+        <button class="detail-close" type="button" @click="previewImageUrl = ''">×</button>
+        <img :src="previewImageUrl" alt="图片预览" />
+      </article>
+    </div>
     <div v-if="selectedProduct" class="confirm-overlay detail-overlay" role="dialog" aria-modal="true" @click.self="selectedProduct = null">
-      <article class="detail-dialog"><button class="detail-close" @click="selectedProduct = null">×</button><img v-if="selectedProduct.coverUrl" :src="selectedProduct.coverUrl" :alt="selectedProduct.title" /><h2>{{ selectedProduct.title }}</h2><b class="detail-price">￥{{ selectedProduct.price }}</b><p>{{ selectedProduct.description }}</p><div class="detail-meta"><span>{{ getCategoryName(selectedProduct.categoryId) }}</span><span>{{ getCampusName(selectedProduct.campusId) }}</span><span>{{ getConditionLabel(selectedProduct.conditionLevel) }}</span><span>{{ getTradeMethodLabel(selectedProduct.tradeMethod) }}</span></div><button v-if="selectedProduct.seller" class="publisher-panel" type="button" @click="openPublicProfile(selectedProduct.seller.id)"><span class="public-avatar"><img v-if="selectedProduct.seller.avatarUrl" :src="selectedProduct.seller.avatarUrl" alt="" /><b v-else>{{ avatarText(selectedProduct.seller) }}</b></span><span><strong>{{ selectedProduct.seller.nickname }}</strong><small>{{ selectedProduct.seller.college || '校园学生' }} · {{ selectedProduct.seller.authStatus === 'APPROVED' ? '已认证' : '未认证' }}</small></span><i>查看主页 ›</i></button><small>浏览 {{ selectedProduct.viewCount }} 次 · {{ selectedProduct.createdAt }}</small></article>
+      <article class="detail-dialog"><button class="detail-close" @click="selectedProduct = null">×</button><div v-if="productImageUrls(selectedProduct).length" class="detail-image-grid"><button v-for="imageUrl in productImageUrls(selectedProduct)" :key="imageUrl" class="detail-image-button" type="button" @click="previewImageUrl = imageUrl"><img :src="imageUrl" :alt="selectedProduct.title" /></button></div><h2>{{ selectedProduct.title }}</h2><b class="detail-price">￥{{ selectedProduct.price }}</b><p>{{ selectedProduct.description }}</p><div class="detail-meta"><span>{{ getCategoryName(selectedProduct.categoryId) }}</span><span>{{ getCampusName(selectedProduct.campusId) }}</span><span>{{ getConditionLabel(selectedProduct.conditionLevel) }}</span><span>{{ getTradeMethodLabel(selectedProduct.tradeMethod) }}</span></div><button v-if="selectedProduct.seller" class="publisher-panel" type="button" @click="openPublicProfile(selectedProduct.seller.id)"><span class="public-avatar"><img v-if="selectedProduct.seller.avatarUrl" :src="selectedProduct.seller.avatarUrl" alt="" /><b v-else>{{ avatarText(selectedProduct.seller) }}</b></span><span><strong>{{ selectedProduct.seller.nickname }}</strong><small>{{ selectedProduct.seller.college || '校园学生' }} · {{ selectedProduct.seller.authStatus === 'APPROVED' ? '已认证' : '未认证' }}</small></span><i>查看主页 ›</i></button><small>浏览 {{ selectedProduct.viewCount }} 次 · {{ selectedProduct.createdAt }}</small></article>
     </div>
 
     <div v-if="selectedWanted" class="confirm-overlay detail-overlay" role="dialog" aria-modal="true" @click.self="selectedWanted = null">
@@ -1042,7 +1301,16 @@ onMounted(loadMe)
     </div>
 
     <div v-if="publicProfile" class="confirm-overlay" role="dialog" aria-modal="true" @click.self="closePublicProfile">
-      <section class="profile-dialog"><button class="detail-close" @click="closePublicProfile">×</button><header class="public-profile-head"><span class="public-avatar large"><img v-if="publicProfile.avatarUrl" :src="publicProfile.avatarUrl" alt="" /><b v-else>{{ avatarText(publicProfile) }}</b></span><div><p class="eyebrow">公开主页</p><h2>{{ publicProfile.nickname }}</h2><p>{{ publicProfile.college || '校园学生' }} · {{ publicProfile.authStatus === 'APPROVED' ? '已认证学生' : '未认证' }}</p></div></header><div v-if="profileLoading" class="empty-state">正在加载主页...</div><template v-else><section class="profile-section"><h3>TA 的商品 <span>{{ profileProducts.length }}</span></h3><div v-if="profileProducts.length === 0" class="empty-state">暂无公开商品</div><div class="profile-card-grid"><article v-for="product in profileProducts" :key="product.id" class="profile-item" @click="openProductDetail(product)"><img v-if="product.coverUrl" :src="product.coverUrl" :alt="product.title" /><div v-else class="image-placeholder">闲</div><strong>{{ product.title }}</strong><b>￥{{ product.price }}</b></article></div></section><section class="profile-section"><h3>TA 的求购 <span>{{ profileWanted.length }}</span></h3><div v-if="profileWanted.length === 0" class="empty-state">暂无公开求购</div><article v-for="item in profileWanted" :key="item.id" class="profile-wanted" @click="openWantedDetail(item)"><div><strong>{{ item.itemName }}</strong><b>预算 ￥{{ item.budget }}</b></div><span>{{ getWantedStatusLabel(item.status) }} · {{ item.campusId ? getCampusName(item.campusId) : '不限校区' }}</span></article></section></template></section>
+      <section class="profile-dialog"><button class="detail-close" @click="closePublicProfile">×</button><header class="public-profile-head"><span class="public-avatar large"><img v-if="publicProfile.avatarUrl" :src="publicProfile.avatarUrl" alt="" /><b v-else>{{ avatarText(publicProfile) }}</b></span><div><p class="eyebrow">公开主页</p><h2>{{ publicProfile.nickname }}</h2><p>{{ publicProfile.college || '校园学生' }} · {{ publicProfile.authStatus === 'APPROVED' ? '已认证学生' : '未认证' }}</p></div></header><div v-if="profileLoading" class="empty-state">正在加载主页...</div><template v-else><section class="profile-section"><h3>TA 的商品 <span>{{ profileProducts.length }}</span></h3><div v-if="profileProducts.length === 0" class="empty-state">暂无公开商品</div><div class="profile-card-grid"><article v-for="product in profileProducts" :key="product.id" class="profile-item" @click="openProductDetail(product)"><img v-if="firstProductImage(product)" :src="firstProductImage(product)" :alt="product.title" /><div v-else class="image-placeholder">闲</div><strong>{{ product.title }}</strong><b>￥{{ product.price }}</b></article></div></section><section class="profile-section"><h3>TA 的求购 <span>{{ profileWanted.length }}</span></h3><div v-if="profileWanted.length === 0" class="empty-state">暂无公开求购</div><article v-for="item in profileWanted" :key="item.id" class="profile-wanted" @click="openWantedDetail(item)"><div><strong>{{ item.itemName }}</strong><b>预算 ￥{{ item.budget }}</b></div><span>{{ getWantedStatusLabel(item.status) }} · {{ item.campusId ? getCampusName(item.campusId) : '不限校区' }}</span></article></section></template></section>
     </div>
   </main>
 </template>
+
+
+
+
+
+
+
+
+
