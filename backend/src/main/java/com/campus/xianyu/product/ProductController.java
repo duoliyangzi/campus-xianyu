@@ -2,10 +2,19 @@ package com.campus.xianyu.product;
 
 import com.campus.xianyu.auth.TokenService;
 import com.campus.xianyu.common.ApiResponse;
+import com.campus.xianyu.common.PageResponse;
 import com.campus.xianyu.user.AppUser;
 import com.campus.xianyu.user.UserRepository;
 import jakarta.validation.Valid;
+import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -14,6 +23,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -29,6 +39,64 @@ public class ProductController {
         this.productRepository = productRepository;
     }
 
+    @GetMapping
+    public ApiResponse<PageResponse<ProductResponse>> list(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) Long categoryId,
+            @RequestParam(required = false) Long campusId,
+            @RequestParam(required = false) String conditionLevel,
+            @RequestParam(required = false) BigDecimal minPrice,
+            @RequestParam(required = false) BigDecimal maxPrice,
+            @RequestParam(required = false) Long sellerId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "8") int size
+    ) {
+        validatePage(page, size);
+        if (minPrice != null && minPrice.signum() < 0) {
+            throw new IllegalArgumentException("最低价格不能小于0");
+        }
+        if (maxPrice != null && maxPrice.signum() < 0) {
+            throw new IllegalArgumentException("最高价格不能小于0");
+        }
+        if (minPrice != null && maxPrice != null && minPrice.compareTo(maxPrice) > 0) {
+            throw new IllegalArgumentException("最低价格不能高于最高价格");
+        }
+
+        Specification<Product> specification = (root, query, builder) -> builder.equal(root.get("status"), "PUBLISHED");
+        if (keyword != null && !keyword.isBlank()) {
+            String pattern = "%" + keyword.trim().toLowerCase() + "%";
+            specification = specification.and((root, query, builder) -> builder.or(
+                    builder.like(builder.lower(root.get("title")), pattern),
+                    builder.like(builder.lower(root.get("description")), pattern)
+            ));
+        }
+        if (categoryId != null) {
+            specification = specification.and((root, query, builder) -> builder.equal(root.get("categoryId"), categoryId));
+        }
+        if (campusId != null) {
+            specification = specification.and((root, query, builder) -> builder.equal(root.get("campusId"), campusId));
+        }
+        if (conditionLevel != null && !conditionLevel.isBlank()) {
+            specification = specification.and((root, query, builder) -> builder.equal(root.get("conditionLevel"), conditionLevel));
+        }
+        if (minPrice != null) {
+            specification = specification.and((root, query, builder) -> builder.greaterThanOrEqualTo(root.get("price"), minPrice));
+        }
+        if (maxPrice != null) {
+            specification = specification.and((root, query, builder) -> builder.lessThanOrEqualTo(root.get("price"), maxPrice));
+        }
+        if (sellerId != null) {
+            specification = specification.and((root, query, builder) -> builder.equal(root.get("sellerId"), sellerId));
+        }
+
+        Page<Product> products = productRepository.findAll(
+                specification,
+                PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"))
+        );
+        List<ProductResponse> content = toResponses(products.getContent());
+        return ApiResponse.ok(PageResponse.from(products, content));
+    }
+
     @PostMapping
     @Transactional
     public ApiResponse<ProductResponse> create(
@@ -41,7 +109,7 @@ public class ProductController {
         product.setSellerId(user.getId());
         product.setStatus("PENDING");
         product.setViewCount(0);
-        return ApiResponse.ok("商品已提交审核", ProductResponse.from(productRepository.save(product)));
+        return ApiResponse.ok("商品已提交审核", ProductResponse.from(productRepository.save(product), user));
     }
 
     @GetMapping("/mine")
@@ -49,10 +117,7 @@ public class ProductController {
             @RequestHeader(value = "Authorization", required = false) String authorization
     ) {
         AppUser user = currentUser(authorization);
-        List<ProductResponse> products = productRepository.findBySellerIdOrderByCreatedAtDesc(user.getId())
-                .stream()
-                .map(ProductResponse::from)
-                .toList();
+        List<ProductResponse> products = toResponses(productRepository.findBySellerIdOrderByCreatedAtDesc(user.getId()));
         return ApiResponse.ok(products);
     }
 
@@ -60,7 +125,12 @@ public class ProductController {
     public ApiResponse<ProductResponse> detail(@PathVariable Long id) {
         Product product = productRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("商品不存在"));
-        return ApiResponse.ok(ProductResponse.from(product));
+        if (!"PUBLISHED".equals(product.getStatus())) {
+            throw new IllegalArgumentException("商品不存在或尚未发布");
+        }
+        AppUser seller = userRepository.findById(product.getSellerId())
+                .orElseThrow(() -> new IllegalArgumentException("卖家不存在"));
+        return ApiResponse.ok(ProductResponse.from(product, seller));
     }
 
     @PutMapping("/{id}")
@@ -78,7 +148,7 @@ public class ProductController {
         fillProduct(product, request);
         product.setStatus("PENDING");
         product.setAuditRemark(null);
-        return ApiResponse.ok("商品已更新并重新提交审核", ProductResponse.from(productRepository.save(product)));
+        return ApiResponse.ok("商品已更新并重新提交审核", ProductResponse.from(productRepository.save(product), user));
     }
 
     @PutMapping("/{id}/off-shelf")
@@ -90,7 +160,7 @@ public class ProductController {
         AppUser user = currentUser(authorization);
         Product product = ownedProduct(id, user.getId());
         product.setStatus("OFF_SHELF");
-        return ApiResponse.ok("商品已下架", ProductResponse.from(productRepository.save(product)));
+        return ApiResponse.ok("商品已下架", ProductResponse.from(productRepository.save(product), user));
     }
 
 
@@ -107,7 +177,7 @@ public class ProductController {
         }
         product.setStatus("PENDING");
         product.setAuditRemark(null);
-        return ApiResponse.ok("商品已恢复并重新提交审核", ProductResponse.from(productRepository.save(product)));
+        return ApiResponse.ok("商品已恢复并重新提交审核", ProductResponse.from(productRepository.save(product), user));
     }
     private void fillProduct(Product product, ProductRequest request) {
         product.setTitle(request.title());
@@ -145,5 +215,23 @@ public class ProductController {
                 .orElseThrow(() -> new IllegalArgumentException("请先登录"));
         return userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("用户不存在"));
+    }
+
+    private void validatePage(int page, int size) {
+        if (page < 0) {
+            throw new IllegalArgumentException("页码不能小于0");
+        }
+        if (size < 1 || size > 50) {
+            throw new IllegalArgumentException("每页数量必须在1到50之间");
+        }
+    }
+
+    private List<ProductResponse> toResponses(List<Product> products) {
+        Map<Long, AppUser> sellers = userRepository.findAllById(
+                        products.stream().map(Product::getSellerId).distinct().toList())
+                .stream().collect(Collectors.toMap(AppUser::getId, Function.identity()));
+        return products.stream()
+                .map(product -> ProductResponse.from(product, sellers.get(product.getSellerId())))
+                .toList();
     }
 }
