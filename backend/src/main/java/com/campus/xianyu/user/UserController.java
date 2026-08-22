@@ -4,6 +4,7 @@ import com.campus.xianyu.auth.TokenService;
 import com.campus.xianyu.common.ApiResponse;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -25,6 +26,14 @@ public class UserController {
     public ApiResponse<UserResponse> me(@RequestHeader(value = "Authorization", required = false) String authorization) {
         AppUser user = currentUser(authorization);
         return ApiResponse.ok(UserResponse.from(user));
+    }
+
+    @GetMapping("/{id}/public")
+    public ApiResponse<PublicUserResponse> publicProfile(@PathVariable Long id) {
+        AppUser user = userRepository.findById(id)
+                .filter(item -> "STUDENT".equals(item.getRole()) && "ACTIVE".equals(item.getStatus()))
+                .orElseThrow(() -> new IllegalArgumentException("用户不存在"));
+        return ApiResponse.ok(PublicUserResponse.from(user));
     }
 
     @PostMapping("/auth")

@@ -1,5 +1,7 @@
 package com.campus.xianyu.product;
 
+import com.campus.xianyu.user.AppUser;
+import com.campus.xianyu.user.PublicUserResponse;
 import java.math.BigDecimal;
 import java.time.format.DateTimeFormatter;
 
@@ -17,11 +19,12 @@ public record ProductResponse(
         String status,
         String auditRemark,
         Integer viewCount,
-        String createdAt
+        String createdAt,
+        PublicUserResponse seller
 ) {
     private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
-    public static ProductResponse from(Product product) {
+    public static ProductResponse from(Product product, AppUser seller) {
         return new ProductResponse(
                 product.getId(),
                 product.getSellerId(),
@@ -36,7 +39,8 @@ public record ProductResponse(
                 product.getStatus(),
                 product.getAuditRemark(),
                 product.getViewCount(),
-                product.getCreatedAt() == null ? null : product.getCreatedAt().format(FORMATTER)
+                product.getCreatedAt() == null ? null : product.getCreatedAt().format(FORMATTER),
+                seller == null ? null : PublicUserResponse.from(seller)
         );
     }
 }
