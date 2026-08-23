@@ -36,6 +36,27 @@ const publicProfile = ref(null)
 const profileProducts = ref([])
 const profileWanted = ref([])
 const profileLoading = ref(false)
+const productComments = ref([])
+const commentForm = reactive({ content: '' })
+const conversations = ref([])
+const selectedConversation = ref(null)
+const pendingChat = ref(null)
+const chatMessages = ref([])
+const chatForm = reactive({ content: '' })
+const myOrders = ref([])
+const reportReasons = ref([])
+const reportDialog = reactive({ visible: false, targetType: '', targetId: null, reasonId: '', description: '' })
+const orderForm = reactive({ meetTime: '', meetLocation: '', remark: '' })
+const pendingProducts = ref([])
+const productReviewStatus = ref('PENDING')
+const adminReports = ref([])
+const reportReviewStatus = ref('PENDING')
+const adminUsers = ref([])
+const adminUserKeyword = ref('')
+const adminCategories = ref([])
+const categoryForm = reactive({ id: null, name: '' })
+const aiAuditLogs = ref([])
+const aiAuditMap = ref({})
 const confirmDialog = reactive({
   visible: false,
   title: '',
@@ -153,6 +174,7 @@ const authStatusClass = computed(() => `status-${String(currentUser.authStatus |
 
 const studentHeaderTitle = computed(() => studentTabs.find((item) => item.key === activeStudentTab.value)?.label || '校园二手')
 const adminHeaderTitle = computed(() => adminTabs.find((item) => item.key === activeAdminTab.value)?.label || '平台管理')
+const totalUnreadCount = computed(() => conversations.value.reduce((sum, item) => sum + (item.unreadCount || 0), 0))
 
 function showNotice({ type = 'info', title = '提示', content = '' }) {
   noticeDialog.visible = true
@@ -177,6 +199,12 @@ function resetLoginForm() {
   loginForm.password = ''
 }
 
+function resetOrderForm() {
+  orderForm.meetTime = ''
+  orderForm.meetLocation = ''
+  orderForm.remark = ''
+}
+
 function updateCurrentUser(user) {
   currentUser.id = user?.id || null
   currentUser.username = user?.username || ''
@@ -187,6 +215,7 @@ function updateCurrentUser(user) {
   currentUser.college = user?.college || ''
   currentUser.authRemark = user?.authRemark || ''
   currentUser.status = user?.status || ''
+  resetOrderForm()
 }
 
 function enterAppByRole() {
@@ -201,6 +230,8 @@ function enterAppByRole() {
     loadProducts()
     loadWanted()
     loadMyWanted()
+    loadReportReasons()
+    loadConversations()
   }
 }
 
@@ -290,10 +321,442 @@ function resetProductFilters() {
 
 async function openProductDetail(product) {
   clearNotice()
+  resetOrderForm()
   try {
     selectedProduct.value = await apiRequest(`/products/${product.id}`)
+    commentForm.content = ''
+    await loadProductComments(product.id)
   } catch (error) {
     showNotice({ type: 'error', title: '操作失败', content: error.message })
+  }
+}
+
+async function loadProductComments(productId) {
+  try {
+    const data = await apiRequest(`/comments?productId=${productId}&page=0&size=20`)
+    productComments.value = data.content
+  } catch (error) {
+    productComments.value = []
+  }
+}
+
+async function submitComment() {
+  if (!selectedProduct.value) return
+  if (!commentForm.content.trim()) {
+    showNotice({ type: 'error', title: '提示', content: '请输入留言内容' })
+    return
+  }
+  loading.value = true
+  try {
+    await apiRequest('/comments', {
+      method: 'POST',
+      body: JSON.stringify({ productId: selectedProduct.value.id, content: commentForm.content.trim() })
+    })
+    commentForm.content = ''
+    await loadProductComments(selectedProduct.value.id)
+    message.value = '留言成功'
+  } catch (error) {
+    showNotice({ type: 'error', title: '操作失败', content: error.message })
+  } finally {
+    loading.value = false
+  }
+}
+
+async function loadConversations() {
+  try {
+    conversations.value = await apiRequest('/messages/conversations')
+  } catch (error) {
+    conversations.value = []
+    showNotice({ type: 'error', title: '操作失败', content: error.message })
+  }
+}
+
+async function openConversation(conversation) {
+  selectedConversation.value = conversation
+  pendingChat.value = null
+  chatForm.content = ''
+  await loadChatMessages(conversation.id)
+  await loadConversations()
+}
+
+async function loadChatMessages(conversationId) {
+  try {
+    chatMessages.value = await apiRequest(`/messages/conversations/${conversationId}`)
+  } catch (error) {
+    chatMessages.value = []
+    showNotice({ type: 'error', title: '操作失败', content: error.message })
+  }
+}
+
+async function sendChatMessage() {
+  if (!chatForm.content.trim()) return
+  if (!selectedConversation.value && !pendingChat.value) return
+  loading.value = true
+  try {
+    let conversationId = selectedConversation.value?.id
+    if (pendingChat.value) {
+      const conversation = await apiRequest('/messages/conversations', {
+        method: 'POST',
+        body: JSON.stringify({
+          peerUserId: pendingChat.value.peerUserId,
+          productId: pendingChat.value.productId,
+          wantedId: pendingChat.value.wantedId
+        })
+      })
+      pendingChat.value = null
+      selectedConversation.value = conversation
+      conversationId = conversation.id
+    }
+    await apiRequest(`/messages/conversations/${conversationId}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({ content: chatForm.content.trim() })
+    })
+    chatForm.content = ''
+    await Promise.all([loadChatMessages(conversationId), loadConversations()])
+  } catch (error) {
+    showNotice({ type: 'error', title: '操作失败', content: error.message })
+  } finally {
+    loading.value = false
+  }
+}
+
+function openPendingChat({ peerUser, productId = null, wantedId = null }) {
+  if (!peerUser || peerUser.id === currentUser.id) {
+    showNotice({ type: 'error', title: '提示', content: '不能和自己私聊' })
+    return
+  }
+  pendingChat.value = { peerUserId: peerUser.id, peerUser, productId, wantedId }
+  selectedConversation.value = null
+  chatMessages.value = []
+  chatForm.content = ''
+  activeStudentTab.value = 'messages'
+}
+
+function startChatWithSeller() {
+  if (!selectedProduct.value?.seller) return
+  openPendingChat({
+    peerUser: selectedProduct.value.seller,
+    productId: selectedProduct.value.id
+  })
+  selectedProduct.value = null
+}
+
+function startChatWithPublisher() {
+  if (!selectedWanted.value?.publisher) return
+  openPendingChat({
+    peerUser: selectedWanted.value.publisher,
+    wantedId: selectedWanted.value.id
+  })
+  selectedWanted.value = null
+}
+
+async function loadMyOrders() {
+  try {
+    myOrders.value = await apiRequest('/orders')
+  } catch (error) {
+    myOrders.value = []
+    showNotice({ type: 'error', title: '操作失败', content: error.message })
+  }
+}
+
+async function createOrderFromProduct() {
+  if (!selectedProduct.value) return
+  loading.value = true
+  try {
+    const payload = {
+      productId: selectedProduct.value.id,
+      meetTime: orderForm.meetTime || null,
+      meetLocation: orderForm.meetLocation || null,
+      remark: orderForm.remark || null,
+      conversationId: selectedConversation.value?.id || null
+    }
+    await apiRequest('/orders', { method: 'POST', body: JSON.stringify(payload) })
+    message.value = '订单创建成功，可在“我的订单”查看'
+    resetOrderForm()
+    selectedProduct.value = null
+    activeStudentTab.value = 'profile'
+    activeMyTab.value = 'orders'
+    await loadMyOrders()
+  } catch (error) {
+    showNotice({ type: 'error', title: '操作失败', content: error.message })
+  } finally {
+    loading.value = false
+  }
+}
+
+async function updateOrderStatus(order, status) {
+  loading.value = true
+  try {
+    await apiRequest(`/orders/${order.id}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status })
+    })
+    message.value = '订单状态已更新'
+    await Promise.all([loadMyOrders(), loadProducts(productPage.page), loadMyProducts()])
+  } catch (error) {
+    showNotice({ type: 'error', title: '操作失败', content: error.message })
+  } finally {
+    loading.value = false
+  }
+}
+
+async function loadReportReasons() {
+  try {
+    reportReasons.value = await apiRequest('/reports/reasons')
+  } catch (error) {
+    reportReasons.value = []
+  }
+}
+
+function openReportDialog(targetType, targetId) {
+  reportDialog.visible = true
+  reportDialog.targetType = targetType
+  reportDialog.targetId = targetId
+  reportDialog.reasonId = reportReasons.value[0]?.id || ''
+  reportDialog.description = ''
+}
+
+function closeReportDialog() {
+  reportDialog.visible = false
+  reportDialog.targetType = ''
+  reportDialog.targetId = null
+  reportDialog.reasonId = ''
+  reportDialog.description = ''
+}
+
+async function submitReport() {
+  if (!reportDialog.reasonId) {
+    showNotice({ type: 'error', title: '提示', content: '请选择举报原因' })
+    return
+  }
+  loading.value = true
+  try {
+    await apiRequest('/reports', {
+      method: 'POST',
+      body: JSON.stringify({
+        reasonId: Number(reportDialog.reasonId),
+        targetType: reportDialog.targetType,
+        targetId: reportDialog.targetId,
+        description: reportDialog.description || null
+      })
+    })
+    closeReportDialog()
+    message.value = '举报已提交，等待管理员处理'
+  } catch (error) {
+    showNotice({ type: 'error', title: '操作失败', content: error.message })
+  } finally {
+    loading.value = false
+  }
+}
+
+async function loadPendingProducts() {
+  adminLoading.value = true
+  try {
+    const data = await apiRequest(`/admin/products?status=${productReviewStatus.value}&page=0&size=20`)
+    pendingProducts.value = data.content
+    if (productReviewStatus.value === 'PENDING') {
+      const entries = await Promise.all(pendingProducts.value.map(async (product) => {
+        try {
+          const logs = await apiRequest(`/admin/ai-audit/products/${product.id}`)
+          return [product.id, logs[0] || null]
+        } catch (error) {
+          return [product.id, null]
+        }
+      }))
+      aiAuditMap.value = Object.fromEntries(entries)
+    } else {
+      aiAuditMap.value = {}
+    }
+  } catch (error) {
+    pendingProducts.value = []
+    aiAuditMap.value = {}
+    showNotice({ type: 'error', title: '操作失败', content: error.message })
+  } finally {
+    adminLoading.value = false
+  }
+}
+
+async function auditProduct(product, status) {
+  adminLoading.value = true
+  try {
+    await apiRequest(`/admin/products/${product.id}/audit`, {
+      method: 'PUT',
+      body: JSON.stringify({ status, auditRemark: status === 'PUBLISHED' ? '审核通过' : '审核未通过' })
+    })
+    message.value = status === 'PUBLISHED' ? '商品审核通过' : '商品已拒绝'
+    await loadPendingProducts()
+  } catch (error) {
+    showNotice({ type: 'error', title: '操作失败', content: error.message })
+  } finally {
+    adminLoading.value = false
+  }
+}
+
+async function loadAiAuditLogs(productId) {
+  try {
+    aiAuditLogs.value = await apiRequest(`/admin/ai-audit/products/${productId}`)
+    if (aiAuditLogs.value[0]) {
+      aiAuditMap.value[productId] = aiAuditLogs.value[0]
+    }
+  } catch (error) {
+    aiAuditLogs.value = []
+  }
+}
+
+async function runAiAudit(product) {
+  adminLoading.value = true
+  try {
+    const result = await apiRequest(`/ai-audit/products/${product.id}`, { method: 'POST' })
+    aiAuditMap.value[product.id] = result
+    aiAuditLogs.value = [result]
+    message.value = `关键词审核完成：${getAiSuggestionLabel(result.suggestion)}`
+  } catch (error) {
+    showNotice({ type: 'error', title: '操作失败', content: error.message })
+  } finally {
+    adminLoading.value = false
+  }
+}
+
+function getAiSuggestionLabel(value) {
+  return {
+    PASS: '建议通过',
+    REVIEW: '建议人工复核',
+    REJECT: '建议拒绝'
+  }[value] || value
+}
+
+function getAiRiskClass(value) {
+  return `ai-risk-${String(value || 'none').toLowerCase()}`
+}
+
+async function loadAdminReports() {
+  adminLoading.value = true
+  try {
+    const data = await apiRequest(`/admin/reports?status=${reportReviewStatus.value}&page=0&size=20`)
+    adminReports.value = data.content
+  } catch (error) {
+    adminReports.value = []
+    showNotice({ type: 'error', title: '操作失败', content: error.message })
+  } finally {
+    adminLoading.value = false
+  }
+}
+
+async function handleReport(report, status) {
+  adminLoading.value = true
+  try {
+    await apiRequest(`/admin/reports/${report.id}/handle`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        status,
+        handleResult: status === 'RESOLVED' ? '举报成立，商品已下架' : '举报不成立，商品继续展示'
+      })
+    })
+    message.value = status === 'RESOLVED' ? '举报已处理，相关商品已下架' : '举报已驳回，商品不受影响'
+    await loadAdminReports()
+  } catch (error) {
+    showNotice({ type: 'error', title: '操作失败', content: error.message })
+  } finally {
+    adminLoading.value = false
+  }
+}
+
+async function loadAdminUsers() {
+  adminLoading.value = true
+  try {
+    const keyword = adminUserKeyword.value.trim()
+    const query = keyword ? `?keyword=${encodeURIComponent(keyword)}&page=0&size=20` : '?page=0&size=20'
+    const data = await apiRequest(`/admin/users${query}`)
+    adminUsers.value = data.content
+  } catch (error) {
+    adminUsers.value = []
+    showNotice({ type: 'error', title: '操作失败', content: error.message })
+  } finally {
+    adminLoading.value = false
+  }
+}
+
+async function updateUserStatus(user, status) {
+  adminLoading.value = true
+  try {
+    await apiRequest(`/admin/users/${user.id}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status })
+    })
+    message.value = status === 'BANNED' ? '用户已封禁' : '用户已解封'
+    await loadAdminUsers()
+  } catch (error) {
+    showNotice({ type: 'error', title: '操作失败', content: error.message })
+  } finally {
+    adminLoading.value = false
+  }
+}
+
+async function loadAdminCategories() {
+  adminLoading.value = true
+  try {
+    adminCategories.value = await apiRequest('/admin/categories')
+  } catch (error) {
+    adminCategories.value = []
+    showNotice({ type: 'error', title: '操作失败', content: error.message })
+  } finally {
+    adminLoading.value = false
+  }
+}
+
+function resetCategoryForm() {
+  categoryForm.id = null
+  categoryForm.name = ''
+}
+
+function editCategory(category) {
+  categoryForm.id = category.id
+  categoryForm.name = category.name
+}
+
+async function submitCategoryForm() {
+  if (!categoryForm.name.trim()) {
+    showNotice({ type: 'error', title: '提示', content: '请输入分类名称' })
+    return
+  }
+  adminLoading.value = true
+  try {
+    const payload = { name: categoryForm.name.trim() }
+    if (categoryForm.id) {
+      await apiRequest(`/admin/categories/${categoryForm.id}`, { method: 'PUT', body: JSON.stringify(payload) })
+      message.value = '分类已更新'
+    } else {
+      await apiRequest('/admin/categories', { method: 'POST', body: JSON.stringify(payload) })
+      message.value = '分类已创建'
+    }
+    resetCategoryForm()
+    await Promise.all([loadAdminCategories(), loadDictionaries()])
+  } catch (error) {
+    showNotice({ type: 'error', title: '操作失败', content: error.message })
+  } finally {
+    adminLoading.value = false
+  }
+}
+
+function askDeleteCategory(category) {
+  confirmDialog.visible = true
+  confirmDialog.title = '删除分类'
+  confirmDialog.content = `确定删除分类「${category.name}」吗？若分类下仍有商品将无法删除。`
+  confirmDialog.confirmText = '删除'
+  confirmDialog.action = () => deleteCategory(category)
+}
+
+async function deleteCategory(category) {
+  adminLoading.value = true
+  try {
+    await apiRequest(`/admin/categories/${category.id}`, { method: 'DELETE' })
+    message.value = '分类已删除'
+    if (categoryForm.id === category.id) resetCategoryForm()
+    await Promise.all([loadAdminCategories(), loadDictionaries()])
+  } catch (error) {
+    showNotice({ type: 'error', title: '操作失败', content: error.message })
+  } finally {
+    adminLoading.value = false
   }
 }
 
@@ -460,6 +923,11 @@ function selectStudentTab(tabKey) {
   clearNotice()
   if (tabKey === 'home') loadProducts(productPage.page)
   if (tabKey === 'wanted') Promise.all([loadWanted(wantedPage.page), loadMyWanted()])
+  if (tabKey === 'messages') {
+    loadConversations()
+  } else if (!isAdmin.value && currentUser.id) {
+    loadConversations()
+  }
 }
 
 function switchMode(nextMode) {
@@ -593,6 +1061,14 @@ function selectAdminTab(tabKey) {
   activeAdminTab.value = tabKey
   if (tabKey === 'authReview') {
     loadAuthApplications()
+  } else if (tabKey === 'productReview') {
+    loadPendingProducts()
+  } else if (tabKey === 'reports') {
+    loadAdminReports()
+  } else if (tabKey === 'users') {
+    loadAdminUsers()
+  } else if (tabKey === 'categories') {
+    loadAdminCategories()
   }
 }
 
@@ -925,16 +1401,29 @@ function getWantedStatusLabel(value) {
   }[value] || value
 }
 
+function getOrderStatusLabel(value) {
+  return {
+    PENDING_CHAT: '待沟通',
+    PENDING_TRADE: '待交易',
+    COMPLETED: '已完成'
+  }[value] || value
+}
+
 function logout() {
   localStorage.removeItem(TOKEN_KEY)
   page.value = 'auth'
   mode.value = 'login'
   clearNotice()
   resetLoginForm()
+  resetOrderForm()
   myProducts.value = []
   products.value = []
   wantedItems.value = []
   myWanted.value = []
+  conversations.value = []
+  selectedConversation.value = null
+  pendingChat.value = null
+  chatMessages.value = []
   resetProductForm()
   updateCurrentUser({ role: 'STUDENT', authStatus: 'UNAUTH' })
 }
@@ -1112,8 +1601,39 @@ onMounted(loadMe)
 
         <section v-else-if="activeStudentTab === 'messages'" class="panel">
           <h2>消息中心</h2>
-          <p class="intro">这里预留给 C 同学实现商品留言、买卖双方私聊、线下交易约定和订单状态跟踪。</p>
-          <div class="empty-state">暂无消息</div>
+          <p class="intro">查看私聊会话，与卖家沟通并约定线下交易。</p>
+          <div v-if="selectedConversation || pendingChat" class="chat-panel">
+            <button class="text-button" type="button" @click="selectedConversation = null; pendingChat = null; chatMessages = []">返回会话列表</button>
+            <h3>与 {{ (selectedConversation?.peerUser || pendingChat?.peerUser)?.nickname || '用户' }} 的对话</h3>
+            <div class="chat-messages">
+              <div v-if="chatMessages.length === 0" class="empty-state">还没有消息，先发一句吧</div>
+              <article v-for="item in chatMessages" :key="item.id" :class="['chat-bubble', item.senderId === currentUser.id ? 'mine' : 'peer']">
+                <strong>{{ item.sender?.nickname || '用户' }}</strong>
+                <p>{{ item.content }}</p>
+                <small>{{ item.createdAt }}</small>
+              </article>
+            </div>
+            <form class="chat-form" @submit.prevent="sendChatMessage">
+              <textarea v-model.trim="chatForm.content" rows="2" placeholder="输入消息内容"></textarea>
+              <button class="primary-button" type="submit" :disabled="loading">发送</button>
+            </form>
+          </div>
+          <template v-else>
+            <div v-if="conversations.length === 0" class="empty-state">暂无会话，可在商品详情页联系卖家</div>
+            <article v-for="item in conversations" :key="item.peerUserId || item.id" class="conversation-item" @click="openConversation(item)">
+              <span class="conversation-avatar">{{ avatarText(item.peerUser || { nickname: '用户' }) }}</span>
+              <div class="conversation-body">
+                <div class="conversation-top">
+                  <strong>{{ item.peerUser?.nickname || '用户' }}</strong>
+                  <small>{{ item.lastMsgAt || item.createdAt }}</small>
+                </div>
+                <div class="conversation-bottom">
+                  <p>{{ item.lastMessage }}</p>
+                  <span v-if="item.unreadCount > 0" class="unread-badge">{{ item.unreadCount > 99 ? '99+' : item.unreadCount }}</span>
+                </div>
+              </div>
+            </article>
+          </template>
         </section>
 
         <section v-else class="panel">
@@ -1136,7 +1656,7 @@ onMounted(loadMe)
           <div class="action-list">
             <button class="primary-button" type="button" @click="openAuthPage">{{ currentUser.authStatus === 'UNAUTH' ? '去实名认证' : '查看/更新认证信息' }}</button>
             <button class="secondary-button" type="button" @click="activeStudentTab = 'publish'">发布商品</button>
-            <p class="hint">A 模块负责用户认证和商品发布管理；其他页面已留好入口。</p>
+            <p class="hint">留言、私聊、订单与举报功能已接入。</p>
           </div>
 
           <section class="section-block">
@@ -1144,8 +1664,9 @@ onMounted(loadMe)
               <h2>我的交易</h2>
               <button v-if="activeMyTab === 'products'" class="text-button" type="button" @click="loadMyProducts">刷新</button>
               <button v-else-if="activeMyTab === 'wanted'" class="text-button" type="button" @click="loadMyWanted">刷新</button>
+              <button v-else-if="activeMyTab === 'orders'" class="text-button" type="button" @click="loadMyOrders">刷新</button>
             </div>
-            <div class="tabs my-tabs"><button v-for="item in myTabs" :key="item.key" :class="{ active: activeMyTab === item.key }" type="button" @click="activeMyTab = item.key">{{ item.label }}</button></div>
+            <div class="tabs my-tabs"><button v-for="item in myTabs" :key="item.key" :class="{ active: activeMyTab === item.key }" type="button" @click="activeMyTab = item.key; if (item.key === 'orders') loadMyOrders()">{{ item.label }}</button></div>
 
             <template v-if="activeMyTab === 'products'">
               <div v-if="myProducts.length === 0" class="empty-state">还没有发布商品</div>
@@ -1168,7 +1689,20 @@ onMounted(loadMe)
             </template>
 
             <template v-else>
-              <div class="empty-state"><strong>暂无订单</strong><p>订单与交易状态由 C 模块接入后集中显示在这里。</p></div>
+              <div v-if="myOrders.length === 0" class="empty-state"><strong>暂无订单</strong><p>可在商品详情页发起交易。</p></div>
+              <article v-for="order in myOrders" :key="order.id" class="product-card my-product-card">
+                <div class="my-product-info">
+                  <strong>{{ order.product?.title || '商品' }}</strong>
+                  <p>订单号：{{ order.orderNo }}</p>
+                  <p>￥{{ order.product?.price }} · {{ getOrderStatusLabel(order.status) }}</p>
+                  <p v-if="order.meetLocation">约定地点：{{ order.meetLocation }}</p>
+                  <p v-if="order.meetTime">约定时间：{{ order.meetTime }}</p>
+                </div>
+                <div class="review-actions">
+                  <button v-if="order.status === 'PENDING_CHAT'" type="button" @click="updateOrderStatus(order, 'PENDING_TRADE')">进入待交易</button>
+                  <button v-if="order.status === 'PENDING_TRADE'" type="button" @click="updateOrderStatus(order, 'COMPLETED')">标记完成</button>
+                </div>
+              </article>
             </template>
           </section>
         </section>
@@ -1177,6 +1711,7 @@ onMounted(loadMe)
       <nav class="bottom-nav" aria-label="学生端底部导航">
         <button v-for="item in studentTabs" :key="item.key" type="button" :class="{ active: activeStudentTab === item.key }" @click="selectStudentTab(item.key)">
           <span>{{ item.label }}</span>
+          <em v-if="item.key === 'messages' && totalUnreadCount > 0" class="nav-badge">{{ totalUnreadCount > 99 ? '99+' : totalUnreadCount }}</em>
         </button>
       </nav>
     </section>
@@ -1221,9 +1756,102 @@ onMounted(loadMe)
             <span :class="['status-pill', `status-${item.authStatus.toLowerCase()}`]">{{ getAuthStatusLabel(item.authStatus) }}</span>
           </article>
         </section>
+        <section v-else-if="activeAdminTab === 'productReview'" class="panel">
+          <h2>商品审核</h2>
+          <p class="intro">提交商品后会自动进行关键词辅助审核；也可手动执行审核。</p>
+          <div class="tabs auth-review-tabs">
+            <button type="button" :class="{ active: productReviewStatus === 'PENDING' }" @click="productReviewStatus = 'PENDING'; loadPendingProducts()">待审核</button>
+            <button type="button" :class="{ active: productReviewStatus === 'PUBLISHED' }" @click="productReviewStatus = 'PUBLISHED'; loadPendingProducts()">已通过</button>
+            <button type="button" :class="{ active: productReviewStatus === 'REJECTED' }" @click="productReviewStatus = 'REJECTED'; loadPendingProducts()">已拒绝</button>
+          </div>
+          <div v-if="adminLoading" class="empty-state">正在加载...</div>
+          <div v-else-if="pendingProducts.length === 0" class="empty-state">暂无商品</div>
+          <article v-for="product in pendingProducts" :key="product.id" class="review-card">
+            <div>
+              <strong>{{ product.title }}</strong>
+              <p>￥{{ product.price }} · {{ product.seller?.nickname || '卖家' }}</p>
+              <p>{{ product.description }}</p>
+              <div v-if="aiAuditMap[product.id]" :class="['ai-audit-box', getAiRiskClass(aiAuditMap[product.id].riskLevel)]">
+                <p><strong>关键词辅助审核</strong> · {{ getAiSuggestionLabel(aiAuditMap[product.id].suggestion) }} · {{ aiAuditMap[product.id].riskLevel }}</p>
+                <p>{{ aiAuditMap[product.id].reason }}</p>
+              </div>
+            </div>
+            <div class="review-actions" v-if="productReviewStatus === 'PENDING'">
+              <button type="button" @click="auditProduct(product, 'PUBLISHED')">通过</button>
+              <button type="button" @click="auditProduct(product, 'REJECTED')">拒绝</button>
+              <button type="button" @click="runAiAudit(product)">执行关键词审核</button>
+              <button type="button" @click="loadAiAuditLogs(product.id)">查看记录</button>
+            </div>
+            <div v-if="aiAuditLogs.length && aiAuditLogs[0]?.productId === product.id" class="ai-audit-box">
+              <p v-for="log in aiAuditLogs" :key="log.id"><strong>{{ getAiSuggestionLabel(log.suggestion) }}</strong> · {{ log.riskLevel }} · {{ log.reason }} · {{ log.createdAt }}</p>
+            </div>
+          </article>
+        </section>
+        <section v-else-if="activeAdminTab === 'reports'" class="panel">
+          <h2>举报处理</h2>
+          <div class="tabs auth-review-tabs">
+            <button type="button" :class="{ active: reportReviewStatus === 'PENDING' }" @click="reportReviewStatus = 'PENDING'; loadAdminReports()">待处理</button>
+            <button type="button" :class="{ active: reportReviewStatus === 'RESOLVED' }" @click="reportReviewStatus = 'RESOLVED'; loadAdminReports()">已处理</button>
+            <button type="button" :class="{ active: reportReviewStatus === 'REJECTED' }" @click="reportReviewStatus = 'REJECTED'; loadAdminReports()">已驳回</button>
+          </div>
+          <div v-if="adminLoading" class="empty-state">正在加载...</div>
+          <div v-else-if="adminReports.length === 0" class="empty-state">暂无举报</div>
+          <article v-for="item in adminReports" :key="item.id" class="review-card">
+            <div>
+              <strong>{{ item.reasonName }} · {{ item.targetType }} #{{ item.targetId }}</strong>
+              <p>{{ item.description || '无补充说明' }}</p>
+              <p>举报人：{{ item.reporter?.nickname }}</p>
+            </div>
+            <div v-if="reportReviewStatus === 'PENDING'" class="review-actions">
+              <button type="button" @click="handleReport(item, 'RESOLVED')">处理</button>
+              <button type="button" @click="handleReport(item, 'REJECTED')">驳回</button>
+            </div>
+          </article>
+        </section>
+        <section v-else-if="activeAdminTab === 'users'" class="panel">
+          <h2>用户管理</h2>
+          <form class="search-row" @submit.prevent="loadAdminUsers">
+            <input v-model.trim="adminUserKeyword" type="text" placeholder="搜索用户名/昵称/学号" />
+            <button class="secondary-button" type="submit" :disabled="adminLoading">搜索</button>
+          </form>
+          <div v-if="adminLoading" class="empty-state">正在加载...</div>
+          <div v-else-if="adminUsers.length === 0" class="empty-state">暂无学生用户</div>
+          <article v-for="user in adminUsers" :key="user.id" class="review-card">
+            <div>
+              <strong>{{ user.nickname }}</strong>
+              <p>{{ user.username }} · {{ user.studentNo || '未填学号' }} · {{ user.college || '未填学院' }}</p>
+            </div>
+            <div class="review-actions">
+              <button v-if="user.status !== 'BANNED'" type="button" @click="updateUserStatus(user, 'BANNED')">封禁</button>
+              <button v-else type="button" @click="updateUserStatus(user, 'ACTIVE')">解封</button>
+            </div>
+            <span :class="['status-pill', `status-${user.status.toLowerCase()}`]">{{ user.status === 'BANNED' ? '已封禁' : '正常' }}</span>
+          </article>
+        </section>
+        <section v-else-if="activeAdminTab === 'categories'" class="panel">
+          <h2>分类管理</h2>
+          <p class="intro">维护商品分类名称，学生发布商品时可选择这些分类。</p>
+          <form class="form compact-form" @submit.prevent="submitCategoryForm">
+            <label>分类名称<input v-model.trim="categoryForm.name" type="text" placeholder="例如：教材资料" /></label>
+            <div class="confirm-actions">
+              <button class="primary-button" type="submit" :disabled="adminLoading">{{ categoryForm.id ? '保存修改' : '新增分类' }}</button>
+              <button v-if="categoryForm.id" class="secondary-button" type="button" @click="resetCategoryForm">取消编辑</button>
+            </div>
+          </form>
+          <div v-if="adminLoading" class="empty-state">正在加载...</div>
+          <article v-for="item in adminCategories" :key="item.id" class="review-card">
+            <div>
+              <strong>{{ item.name }}</strong>
+              <p>序号 {{ item.sortOrder }}</p>
+            </div>
+            <div class="review-actions">
+              <button type="button" @click="editCategory(item)">编辑</button>
+              <button type="button" @click="askDeleteCategory(item)">删除</button>
+            </div>
+          </article>
+        </section>
         <section v-else class="panel">
           <h2>{{ adminHeaderTitle }}</h2>
-          <p class="intro">该管理功能由 {{ adminTabs.find((item) => item.key === activeAdminTab)?.owner }} 同学后续开发。</p>
           <div class="empty-state">功能入口已预留</div>
         </section>
       </div>
@@ -1293,11 +1921,70 @@ onMounted(loadMe)
       </article>
     </div>
     <div v-if="selectedProduct" class="confirm-overlay detail-overlay" role="dialog" aria-modal="true" @click.self="selectedProduct = null">
-      <article class="detail-dialog"><button class="detail-close" @click="selectedProduct = null">×</button><div v-if="productImageUrls(selectedProduct).length" class="detail-image-grid"><button v-for="imageUrl in productImageUrls(selectedProduct)" :key="imageUrl" class="detail-image-button" type="button" @click="previewImageUrl = imageUrl"><img :src="imageUrl" :alt="selectedProduct.title" /></button></div><h2>{{ selectedProduct.title }}</h2><b class="detail-price">￥{{ selectedProduct.price }}</b><p>{{ selectedProduct.description }}</p><div class="detail-meta"><span>{{ getCategoryName(selectedProduct.categoryId) }}</span><span>{{ getCampusName(selectedProduct.campusId) }}</span><span>{{ getConditionLabel(selectedProduct.conditionLevel) }}</span><span>{{ getTradeMethodLabel(selectedProduct.tradeMethod) }}</span></div><button v-if="selectedProduct.seller" class="publisher-panel" type="button" @click="openPublicProfile(selectedProduct.seller.id)"><span class="public-avatar"><img v-if="selectedProduct.seller.avatarUrl" :src="selectedProduct.seller.avatarUrl" alt="" /><b v-else>{{ avatarText(selectedProduct.seller) }}</b></span><span><strong>{{ selectedProduct.seller.nickname }}</strong><small>{{ selectedProduct.seller.college || '校园学生' }} · {{ selectedProduct.seller.authStatus === 'APPROVED' ? '已认证' : '未认证' }}</small></span><i>查看主页 ›</i></button><small>浏览 {{ selectedProduct.viewCount }} 次 · {{ selectedProduct.createdAt }}</small></article>
+      <article class="detail-dialog">
+        <button class="detail-close" @click="selectedProduct = null">×</button>
+        <div v-if="productImageUrls(selectedProduct).length" class="detail-image-grid">
+          <button v-for="imageUrl in productImageUrls(selectedProduct)" :key="imageUrl" class="detail-image-button" type="button" @click="previewImageUrl = imageUrl">
+            <img :src="imageUrl" :alt="selectedProduct.title" />
+          </button>
+        </div>
+        <h2>{{ selectedProduct.title }}</h2>
+        <b class="detail-price">￥{{ selectedProduct.price }}</b>
+        <p>{{ selectedProduct.description }}</p>
+        <div class="detail-meta">
+          <span>{{ getCategoryName(selectedProduct.categoryId) }}</span>
+          <span>{{ getCampusName(selectedProduct.campusId) }}</span>
+          <span>{{ getConditionLabel(selectedProduct.conditionLevel) }}</span>
+          <span>{{ getTradeMethodLabel(selectedProduct.tradeMethod) }}</span>
+        </div>
+        <button v-if="selectedProduct.seller" class="publisher-panel" type="button" @click="openPublicProfile(selectedProduct.seller.id)">
+          <span class="public-avatar"><img v-if="selectedProduct.seller.avatarUrl" :src="selectedProduct.seller.avatarUrl" alt="" /><b v-else>{{ avatarText(selectedProduct.seller) }}</b></span>
+          <span><strong>{{ selectedProduct.seller.nickname }}</strong><small>{{ selectedProduct.seller.college || '校园学生' }} · {{ selectedProduct.seller.authStatus === 'APPROVED' ? '已认证' : '未认证' }}</small></span>
+          <i>查看主页 ›</i>
+        </button>
+        <div v-if="selectedProduct.seller && selectedProduct.seller.id !== currentUser.id" class="detail-actions">
+          <button class="primary-button" type="button" @click="startChatWithSeller">联系卖家</button>
+          <button class="secondary-button" type="button" @click="createOrderFromProduct">我要购买</button>
+          <button class="secondary-button" type="button" @click="openReportDialog('PRODUCT', selectedProduct.id)">举报商品</button>
+        </div>
+        <section class="section-block">
+          <h3>商品留言</h3>
+          <div v-if="productComments.length === 0" class="empty-state">还没有留言</div>
+          <article v-for="item in productComments" :key="item.id" class="comment-card">
+            <strong>{{ item.user?.nickname || '用户' }}</strong>
+            <p>{{ item.content }}</p>
+            <small>{{ item.createdAt }}</small>
+          </article>
+          <form class="comment-form" @submit.prevent="submitComment">
+            <textarea v-model.trim="commentForm.content" rows="2" placeholder="向卖家提问..."></textarea>
+            <button class="primary-button" type="submit" :disabled="loading">发表留言</button>
+          </form>
+        </section>
+        <label>约定地点<input v-model.trim="orderForm.meetLocation" type="text" placeholder="例如：图书馆门口" /></label>
+        <label>约定时间<input v-model="orderForm.meetTime" type="datetime-local" /></label>
+        <label>备注<textarea v-model.trim="orderForm.remark" rows="2" placeholder="交易备注"></textarea></label>
+        <small>浏览 {{ selectedProduct.viewCount }} 次 · {{ selectedProduct.createdAt }}</small>
+      </article>
+    </div>
+
+    <div v-if="reportDialog.visible" class="confirm-overlay report-overlay" role="dialog" aria-modal="true" @click.self="closeReportDialog">
+      <form class="remark-dialog" @submit.prevent="submitReport">
+        <h2>提交举报</h2>
+        <label>举报原因
+          <select v-model="reportDialog.reasonId">
+            <option v-for="item in reportReasons" :key="item.id" :value="item.id">{{ item.name }}</option>
+          </select>
+        </label>
+        <label>补充说明<textarea v-model.trim="reportDialog.description" rows="3" placeholder="选填"></textarea></label>
+        <div class="confirm-actions">
+          <button class="secondary-button" type="button" @click="closeReportDialog">取消</button>
+          <button class="primary-button" type="submit" :disabled="loading">提交举报</button>
+        </div>
+      </form>
     </div>
 
     <div v-if="selectedWanted" class="confirm-overlay detail-overlay" role="dialog" aria-modal="true" @click.self="selectedWanted = null">
-      <article class="detail-dialog"><button class="detail-close" @click="selectedWanted = null">×</button><p class="eyebrow">求购详情</p><h2>{{ selectedWanted.itemName }}</h2><b class="detail-price">预算 ￥{{ selectedWanted.budget }}</b><p>{{ selectedWanted.description || '发布者没有填写补充描述。' }}</p><div class="detail-meta"><span>{{ getConditionLabel(selectedWanted.expectCondition) }}</span><span>{{ selectedWanted.campusId ? getCampusName(selectedWanted.campusId) : '不限校区' }}</span><span>{{ getWantedStatusLabel(selectedWanted.status) }}</span></div><button v-if="selectedWanted.publisher" class="publisher-panel" type="button" @click="openPublicProfile(selectedWanted.publisher.id)"><span class="public-avatar"><img v-if="selectedWanted.publisher.avatarUrl" :src="selectedWanted.publisher.avatarUrl" alt="" /><b v-else>{{ avatarText(selectedWanted.publisher) }}</b></span><span><strong>{{ selectedWanted.publisher.nickname }}</strong><small>{{ selectedWanted.publisher.college || '校园学生' }} · {{ selectedWanted.publisher.authStatus === 'APPROVED' ? '已认证' : '未认证' }}</small></span><i>查看主页 ›</i></button><small>发布于 {{ selectedWanted.createdAt }}</small></article>
+      <article class="detail-dialog"><button class="detail-close" @click="selectedWanted = null">×</button><p class="eyebrow">求购详情</p><h2>{{ selectedWanted.itemName }}</h2><b class="detail-price">预算 ￥{{ selectedWanted.budget }}</b><p>{{ selectedWanted.description || '发布者没有填写补充描述。' }}</p><div class="detail-meta"><span>{{ getConditionLabel(selectedWanted.expectCondition) }}</span><span>{{ selectedWanted.campusId ? getCampusName(selectedWanted.campusId) : '不限校区' }}</span><span>{{ getWantedStatusLabel(selectedWanted.status) }}</span></div><button v-if="selectedWanted.publisher" class="publisher-panel" type="button" @click="openPublicProfile(selectedWanted.publisher.id)"><span class="public-avatar"><img v-if="selectedWanted.publisher.avatarUrl" :src="selectedWanted.publisher.avatarUrl" alt="" /><b v-else>{{ avatarText(selectedWanted.publisher) }}</b></span><span><strong>{{ selectedWanted.publisher.nickname }}</strong><small>{{ selectedWanted.publisher.college || '校园学生' }} · {{ selectedWanted.publisher.authStatus === 'APPROVED' ? '已认证' : '未认证' }}</small></span><i>查看主页 ›</i></button><div v-if="selectedWanted.publisher && selectedWanted.publisher.id !== currentUser.id" class="detail-actions"><button class="primary-button" type="button" @click="startChatWithPublisher">联系发布者</button></div><small>发布于 {{ selectedWanted.createdAt }}</small></article>
     </div>
 
     <div v-if="publicProfile" class="confirm-overlay" role="dialog" aria-modal="true" @click.self="closePublicProfile">
