@@ -1,5 +1,7 @@
 package com.campus.xianyu.product;
 
+import com.campus.xianyu.aiaudit.AiAuditLogRepository;
+import com.campus.xianyu.aiaudit.AiAuditService;
 import com.campus.xianyu.auth.TokenService;
 import com.campus.xianyu.common.ApiResponse;
 import com.campus.xianyu.common.PageResponse;
@@ -37,17 +39,23 @@ public class ProductController {
     private final UserRepository userRepository;
     private final ProductRepository productRepository;
     private final ProductImageRepository productImageRepository;
+    private final AiAuditLogRepository aiAuditLogRepository;
+    private final AiAuditService aiAuditService;
 
     public ProductController(
             TokenService tokenService,
             UserRepository userRepository,
             ProductRepository productRepository,
-            ProductImageRepository productImageRepository
+            ProductImageRepository productImageRepository,
+            AiAuditLogRepository aiAuditLogRepository,
+            AiAuditService aiAuditService
     ) {
         this.tokenService = tokenService;
         this.userRepository = userRepository;
         this.productRepository = productRepository;
         this.productImageRepository = productImageRepository;
+        this.aiAuditLogRepository = aiAuditLogRepository;
+        this.aiAuditService = aiAuditService;
     }
 
     @GetMapping
@@ -123,6 +131,7 @@ public class ProductController {
         product.setViewCount(0);
         Product savedProduct = productRepository.save(product);
         saveProductImages(savedProduct.getId(), imageUrls);
+        aiAuditLogRepository.save(aiAuditService.audit(savedProduct));
         return ApiResponse.ok("商品已提交审核", ProductResponse.from(savedProduct, user, imageUrls));
     }
 
@@ -165,6 +174,7 @@ public class ProductController {
         product.setAuditRemark(null);
         Product savedProduct = productRepository.save(product);
         saveProductImages(savedProduct.getId(), imageUrls);
+        aiAuditLogRepository.save(aiAuditService.audit(savedProduct));
         return ApiResponse.ok("商品已更新并重新提交审核", ProductResponse.from(savedProduct, user, imageUrls));
     }
 

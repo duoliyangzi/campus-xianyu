@@ -9,17 +9,17 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api")
 public class DictController {
-    private final CategoryRepository categoryRepository;
+    private final CategoryService categoryService;
     private final CampusRepository campusRepository;
 
-    public DictController(CategoryRepository categoryRepository, CampusRepository campusRepository) {
-        this.categoryRepository = categoryRepository;
+    public DictController(CategoryService categoryService, CampusRepository campusRepository) {
+        this.categoryService = categoryService;
         this.campusRepository = campusRepository;
     }
 
     @GetMapping("/categories")
     public ApiResponse<List<OptionResponse>> categories() {
-        List<OptionResponse> categories = categoryRepository.findByStatusOrderBySortOrderAscIdAsc("ENABLED")
+        List<OptionResponse> categories = categoryService.listEnabled()
                 .stream()
                 .map(category -> new OptionResponse(category.getId(), category.getName()))
                 .toList();
