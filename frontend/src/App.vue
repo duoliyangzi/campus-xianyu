@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { match as matchPinyin } from 'pinyin-pro'
 
-const API_BASE = 'http://localhost:8080/api'
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 const TOKEN_KEY = 'campus_xianyu_token'
 
 const page = ref('auth')
@@ -1424,8 +1424,8 @@ function firstProductImage(product) {
   return productImageUrls(product)[0] || ''
 }
 
-function extraProductImageCount(product) {
-  return Math.max(productImageUrls(product).length - 4, 0)
+function remainingProductImageCount(product) {
+  return Math.max(productImageUrls(product).length - 1, 0)
 }
 
 function getCategoryName(id) {
@@ -1738,8 +1738,8 @@ onMounted(loadMe)
               <div v-if="myProducts.length === 0" class="empty-state">还没有发布商品</div>
               <article v-for="product in myProducts" :key="product.id" class="product-card my-product-card">
                 <div v-if="productImageUrls(product).length" class="my-product-thumbs">
-                  <button v-for="imageUrl in productImageUrls(product).slice(0, 4)" :key="imageUrl" class="my-product-thumb" type="button" @click="previewImageUrl = imageUrl"><img :src="imageUrl" :alt="product.title" /></button>
-                  <span v-if="extraProductImageCount(product)" class="image-count-badge">+{{ extraProductImageCount(product) }}</span>
+                  <button v-for="imageUrl in productImageUrls(product).slice(0, 1)" :key="imageUrl" class="my-product-thumb" type="button" @click="previewImageUrl = imageUrl"><img :src="imageUrl" :alt="product.title" /></button>
+                  <span v-if="remainingProductImageCount(product)" class="image-count-badge">+{{ remainingProductImageCount(product) }}</span>
                 </div>
                 <div v-else class="my-product-thumbs"><div class="image-placeholder small">闲</div></div>
                 <div class="my-product-info"><strong>{{ product.title }}</strong><p>￥{{ product.price }} · {{ getCategoryName(product.categoryId) }} · {{ getCampusName(product.campusId) }}</p><p>{{ getConditionLabel(product.conditionLevel) }} · {{ getTradeMethodLabel(product.tradeMethod) }}</p></div>
