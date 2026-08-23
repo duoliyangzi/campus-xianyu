@@ -9,6 +9,7 @@ import java.nio.file.Paths;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -22,11 +23,12 @@ import org.springframework.web.multipart.MultipartFile;
 public class UploadController {
     private static final long MAX_IMAGE_SIZE = 5 * 1024 * 1024;
     private static final Set<String> ALLOWED_EXTENSIONS = Set.of("jpg", "jpeg", "png", "webp", "gif");
-    private final Path imageUploadDir = Paths.get("uploads", "images").toAbsolutePath().normalize();
+    private final Path imageUploadDir;
     private final TokenService tokenService;
 
-    public UploadController(TokenService tokenService) {
+    public UploadController(TokenService tokenService, @Value("${app.upload-dir:uploads}") String uploadDir) {
         this.tokenService = tokenService;
+        this.imageUploadDir = Paths.get(uploadDir, "images").toAbsolutePath().normalize();
     }
 
     @PostMapping("/images")

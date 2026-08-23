@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { match as matchPinyin } from 'pinyin-pro'
 
-const API_BASE = 'http://localhost:8080/api'
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 const TOKEN_KEY = 'campus_xianyu_token'
 
 const page = ref('auth')

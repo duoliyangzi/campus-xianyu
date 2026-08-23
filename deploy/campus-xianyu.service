@@ -1,0 +1,17 @@
+[Unit]
+Description=Campus Xianyu Spring Boot backend
+After=network.target mysql.service
+Requires=mysql.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/campus-xianyu/backend
+EnvironmentFile=/etc/campus-xianyu.env
+ExecStart=/usr/bin/java -Xms256m -Xmx640m -jar /opt/campus-xianyu/backend/xianyu.jar
+Restart=on-failure
+RestartSec=5
+SuccessExitStatus=143
+
+[Install]
+WantedBy=multi-user.target
