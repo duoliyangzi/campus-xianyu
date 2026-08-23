@@ -227,6 +227,9 @@ input:focus, select:focus, textarea:focus { border-color: #2563eb; box-shadow: 0
 .detail-meta span { padding: 6px 9px; border-radius: 6px; color: #475569; background: #f1f5f9; font-size: 13px; }
 .detail-overlay { z-index: 30; }
 .report-overlay { z-index: 50; }
+.notice-overlay { z-index: 90; }
+.search-highlight { border-radius: 3px; background: rgba(180, 138, 20, .3); color: inherit; padding: 0 1px; }
+.search-summary { overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .bottom-nav button { position: relative; }
 .nav-badge, .unread-badge {
   min-width: 18px;

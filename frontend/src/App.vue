@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
+import { match as matchPinyin } from 'pinyin-pro'
 
 const API_BASE = 'http://localhost:8080/api'
 const TOKEN_KEY = 'campus_xianyu_token'
@@ -218,6 +219,13 @@ function updateCurrentUser(user) {
   resetOrderForm()
 }
 
+function clearCurrentSession() {
+  sessionStorage.removeItem(TOKEN_KEY)
+  updateCurrentUser(null)
+  page.value = 'auth'
+  mode.value = 'login'
+}
+
 function enterAppByRole() {
   page.value = isAdmin.value ? 'adminApp' : 'studentApp'
   activeStudentTab.value = 'profile'
@@ -236,7 +244,7 @@ function enterAppByRole() {
 }
 
 async function apiRequest(path, options = {}) {
-  const token = localStorage.getItem(TOKEN_KEY)
+  const token = sessionStorage.getItem(TOKEN_KEY)
   const headers = {
     'Content-Type': 'application/json',
     ...(options.headers || {})
@@ -253,13 +261,17 @@ async function apiRequest(path, options = {}) {
 
   const result = await response.json().catch(() => null)
   if (!response.ok || !result || result.code !== 0) {
-    throw new Error(result?.message || `请求失败：${response.status}`)
+    const requestError = new Error(result?.message || `请求失败：${response.status}`)
+    if (result?.message?.includes('请先登录')) {
+      clearCurrentSession()
+    }
+    throw requestError
   }
   return result.data
 }
 
 async function loadMe() {
-  const token = localStorage.getItem(TOKEN_KEY)
+  const token = sessionStorage.getItem(TOKEN_KEY)
   if (!token) return
 
   try {
@@ -267,7 +279,7 @@ async function loadMe() {
     updateCurrentUser(user)
     enterAppByRole()
   } catch (error) {
-    localStorage.removeItem(TOKEN_KEY)
+    clearCurrentSession()
   }
 }
 
@@ -285,7 +297,7 @@ async function loadDictionaries() {
 }
 
 async function loadMyProducts() {
-  const token = localStorage.getItem(TOKEN_KEY)
+  const token = sessionStorage.getItem(TOKEN_KEY)
   if (!token || isAdmin.value) return
   try {
     myProducts.value = await apiRequest('/products/mine')
@@ -788,7 +800,7 @@ async function loadWanted(page = 0) {
 }
 
 async function loadMyWanted() {
-  if (!localStorage.getItem(TOKEN_KEY) || isAdmin.value) return
+  if (!sessionStorage.getItem(TOKEN_KEY) || isAdmin.value) return
   try {
     myWanted.value = await apiRequest('/wanted/mine')
   } catch (error) {
@@ -809,6 +821,10 @@ function resetWantedForm() {
 
 function startWantedCreate() {
   clearNotice()
+  if (!isApprovedStudent.value) {
+    openAuthPage()
+    return
+  }
   resetWantedForm()
   showWantedForm.value = true
 }
@@ -889,6 +905,30 @@ function avatarText(user) {
   return (user?.nickname || '校').slice(0, 1)
 }
 
+function highlightedSegments(value, keyword) {
+  const text = String(value || '')
+  const query = String(keyword || '').trim()
+  if (!text || !query) return [{ text, highlighted: false }]
+
+  const matchedIndexes = matchPinyin(text, query)
+  if (!Array.isArray(matchedIndexes) || matchedIndexes.length === 0) {
+    return [{ text, highlighted: false }]
+  }
+
+  const highlighted = new Set(matchedIndexes)
+  const segments = []
+  for (let index = 0; index < text.length; index += 1) {
+    const isHighlighted = highlighted.has(index)
+    const previous = segments[segments.length - 1]
+    if (previous && previous.highlighted === isHighlighted) {
+      previous.text += text[index]
+    } else {
+      segments.push({ text: text[index], highlighted: isHighlighted })
+    }
+  }
+  return segments
+}
+
 async function openPublicProfile(userId) {
   if (!userId) return
   selectedProduct.value = null
@@ -963,7 +1003,7 @@ async function handleLogin() {
       method: 'POST',
       body: JSON.stringify({ username: loginForm.username, password: loginForm.password })
     })
-    localStorage.setItem(TOKEN_KEY, data.token)
+    sessionStorage.setItem(TOKEN_KEY, data.token)
     updateCurrentUser(data.user)
     enterAppByRole()
   } catch (error) {
@@ -1156,7 +1196,7 @@ async function uploadImageFile(file) {
 
   const formData = new FormData()
   formData.append('file', file)
-  const token = localStorage.getItem(TOKEN_KEY)
+  const token = sessionStorage.getItem(TOKEN_KEY)
   const response = await fetch(`${API_BASE}/uploads/images`, {
     method: 'POST',
     headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -1329,6 +1369,29 @@ async function offShelfProduct(product) {
   }
 }
 
+function askDeleteProduct(product) {
+  openConfirmDialog({
+    title: '确认删除商品？',
+    content: `删除后，“${product.title}”将不再展示，也不能恢复。相关订单和记录仍会保留。`,
+    confirmText: '确认删除',
+    action: () => deleteProduct(product)
+  })
+}
+
+async function deleteProduct(product) {
+  clearNotice()
+  loading.value = true
+  try {
+    await apiRequest(`/products/${product.id}`, { method: 'DELETE' })
+    message.value = '商品已删除。'
+    await Promise.all([loadMyProducts(), loadProducts(productPage.page)])
+  } catch (error) {
+    showNotice({ type: 'error', title: '操作失败', content: error.message })
+  } finally {
+    loading.value = false
+  }
+}
+
 function askRestoreProduct(product) {
   openConfirmDialog({
     title: '恢复上架商品？',
@@ -1389,7 +1452,8 @@ function getProductStatusLabel(value) {
     PENDING: '待审核',
     PUBLISHED: '已发布',
     OFF_SHELF: '已下架',
-    REJECTED: '审核未通过'
+    REJECTED: '审核未通过',
+    DELETED: '已删除'
   }[value] || value
 }
 
@@ -1410,7 +1474,7 @@ function getOrderStatusLabel(value) {
 }
 
 function logout() {
-  localStorage.removeItem(TOKEN_KEY)
+  clearCurrentSession()
   page.value = 'auth'
   mode.value = 'login'
   clearNotice()
@@ -1504,7 +1568,7 @@ onMounted(loadMe)
             <article v-for="product in products" :key="product.id" class="market-card" @click="openProductDetail(product)">
               <img v-if="firstProductImage(product)" :src="firstProductImage(product)" :alt="product.title" />
               <div v-else class="image-placeholder">闲</div>
-              <div class="market-info"><strong>{{ product.title }}</strong><b>￥{{ product.price }}</b><p>{{ getCategoryName(product.categoryId) }} · {{ getCampusName(product.campusId) }}</p><span>{{ getConditionLabel(product.conditionLevel) }} · {{ getTradeMethodLabel(product.tradeMethod) }}</span><button v-if="product.seller" class="publisher-mini" type="button" @click.stop="openPublicProfile(product.seller.id)"><img v-if="product.seller.avatarUrl" :src="product.seller.avatarUrl" alt="" /><span v-else>{{ avatarText(product.seller) }}</span><em>{{ product.seller.nickname }}</em></button></div>
+              <div class="market-info"><strong><template v-for="(segment, index) in highlightedSegments(product.title, productFilters.keyword)" :key="index"><mark v-if="segment.highlighted" class="search-highlight">{{ segment.text }}</mark><template v-else>{{ segment.text }}</template></template></strong><b>￥{{ product.price }}</b><p v-if="productFilters.keyword" class="search-summary"><template v-for="(segment, index) in highlightedSegments(product.description, productFilters.keyword)" :key="index"><mark v-if="segment.highlighted" class="search-highlight">{{ segment.text }}</mark><template v-else>{{ segment.text }}</template></template></p><p>{{ getCategoryName(product.categoryId) }} · {{ getCampusName(product.campusId) }}</p><span>{{ getConditionLabel(product.conditionLevel) }} · {{ getTradeMethodLabel(product.tradeMethod) }}</span><button v-if="product.seller" class="publisher-mini" type="button" @click.stop="openPublicProfile(product.seller.id)"><img v-if="product.seller.avatarUrl" :src="product.seller.avatarUrl" alt="" /><span v-else>{{ avatarText(product.seller) }}</span><em><template v-for="(segment, index) in highlightedSegments(product.seller.nickname, productFilters.keyword)" :key="index"><mark v-if="segment.highlighted" class="search-highlight">{{ segment.text }}</mark><template v-else>{{ segment.text }}</template></template></em></button></div>
             </article>
           </div>
           <div class="pagination"><button :disabled="productPage.first || productPage.totalPages === 0" @click="loadProducts(productPage.page - 1)">上一页</button><span>共 {{ productPage.totalElements }} 条 · {{ productPage.totalPages === 0 ? 0 : productPage.page + 1 }} / {{ productPage.totalPages }} 页</span><button :disabled="productPage.last || productPage.totalPages === 0" @click="loadProducts(productPage.page + 1)">下一页</button></div>
@@ -1513,9 +1577,11 @@ onMounted(loadMe)
         <section v-else-if="activeStudentTab === 'wanted'" class="panel">
           <h2>求购管理</h2>
           <p class="intro">发布想买的物品，也可以查看其他同学的求购。</p>
-          <button class="primary-button wanted-create" type="button" @click="startWantedCreate">发布求购</button>
+          <p v-if="!isApprovedStudent" class="intro">发布求购需要先通过学生实名认证。当前状态：{{ authStatusText }}</p>
+          <button v-if="!isApprovedStudent" class="primary-button wanted-create" type="button" @click="openAuthPage">去实名认证</button>
+          <button v-else class="primary-button wanted-create" type="button" @click="startWantedCreate">发布求购</button>
 
-          <form v-if="showWantedForm" class="form form-card" @submit.prevent="submitWanted">
+          <form v-if="showWantedForm && isApprovedStudent" class="form form-card" @submit.prevent="submitWanted">
             <h2>{{ editingWantedId ? '修改求购' : '发布求购' }}</h2>
             <label>物品名称<input v-model.trim="wantedForm.itemName" maxlength="100" placeholder="例如：二手自行车" /></label>
             <label>预算<input v-model="wantedForm.budget" type="number" inputmode="numeric" min="1" step="1" placeholder="例如：300" /></label>
@@ -1534,7 +1600,7 @@ onMounted(loadMe)
             </form>
             <div v-if="wantedItems.length === 0" class="empty-state">暂无求购信息</div>
             <div class="card-grid">
-              <article v-for="item in wantedItems" :key="item.id" class="wanted-card" @click="openWantedDetail(item)"><strong>{{ item.itemName }}</strong><b class="wanted-budget">预算 ￥{{ item.budget }}</b><p>{{ item.description || '暂无补充描述' }}</p><span>{{ getConditionLabel(item.expectCondition) }} · {{ item.campusId ? getCampusName(item.campusId) : '不限校区' }}</span><button v-if="item.publisher" class="publisher-mini" type="button" @click.stop="openPublicProfile(item.publisher.id)"><img v-if="item.publisher.avatarUrl" :src="item.publisher.avatarUrl" alt="" /><span v-else>{{ avatarText(item.publisher) }}</span><em>{{ item.publisher.nickname }}</em></button><em :class="['status-pill', `status-${item.status.toLowerCase()}`]">{{ getWantedStatusLabel(item.status) }}</em></article>
+              <article v-for="item in wantedItems" :key="item.id" class="wanted-card" @click="openWantedDetail(item)"><strong><template v-for="(segment, index) in highlightedSegments(item.itemName, wantedFilters.keyword)" :key="index"><mark v-if="segment.highlighted" class="search-highlight">{{ segment.text }}</mark><template v-else>{{ segment.text }}</template></template></strong><b class="wanted-budget">预算 ￥{{ item.budget }}</b><p><template v-for="(segment, index) in highlightedSegments(item.description || '暂无补充描述', wantedFilters.keyword)" :key="index"><mark v-if="segment.highlighted" class="search-highlight">{{ segment.text }}</mark><template v-else>{{ segment.text }}</template></template></p><span>{{ getConditionLabel(item.expectCondition) }} · {{ item.campusId ? getCampusName(item.campusId) : '不限校区' }}</span><button v-if="item.publisher" class="publisher-mini" type="button" @click.stop="openPublicProfile(item.publisher.id)"><img v-if="item.publisher.avatarUrl" :src="item.publisher.avatarUrl" alt="" /><span v-else>{{ avatarText(item.publisher) }}</span><em><template v-for="(segment, index) in highlightedSegments(item.publisher.nickname, wantedFilters.keyword)" :key="index"><mark v-if="segment.highlighted" class="search-highlight">{{ segment.text }}</mark><template v-else>{{ segment.text }}</template></template></em></button><em :class="['status-pill', `status-${item.status.toLowerCase()}`]">{{ getWantedStatusLabel(item.status) }}</em></article>
             </div>
             <div class="pagination"><button :disabled="wantedPage.first || wantedPage.totalPages === 0" @click="loadWanted(wantedPage.page - 1)">上一页</button><span>共 {{ wantedPage.totalElements }} 条 · {{ wantedPage.totalPages === 0 ? 0 : wantedPage.page + 1 }} / {{ wantedPage.totalPages }} 页</span><button :disabled="wantedPage.last || wantedPage.totalPages === 0" @click="loadWanted(wantedPage.page + 1)">下一页</button></div>
           </template>
@@ -1679,13 +1745,13 @@ onMounted(loadMe)
                 <div class="my-product-info"><strong>{{ product.title }}</strong><p>￥{{ product.price }} · {{ getCategoryName(product.categoryId) }} · {{ getCampusName(product.campusId) }}</p><p>{{ getConditionLabel(product.conditionLevel) }} · {{ getTradeMethodLabel(product.tradeMethod) }}</p></div>
                 <span :class="['status-pill', `status-${product.status.toLowerCase().replace('_', '-')}`]">{{ getProductStatusLabel(product.status) }}</span>
                 <p v-if="product.status === 'REJECTED' && product.auditRemark" class="audit-reason"><strong>未通过原因：</strong>{{ product.auditRemark }}</p><p class="product-desc">{{ product.description }}</p>
-                <div class="review-actions"><button type="button" @click="editProduct(product)">修改</button><button v-if="product.status !== 'OFF_SHELF'" type="button" @click="askOffShelfProduct(product)">下架</button><button v-else type="button" @click="askRestoreProduct(product)">恢复上架</button></div>
+                <div class="review-actions"><button type="button" @click="openProductDetail(product)">查看详情与留言</button><button type="button" @click="editProduct(product)">修改</button><button v-if="product.status !== 'OFF_SHELF'" type="button" @click="askOffShelfProduct(product)">下架</button><button v-else type="button" @click="askRestoreProduct(product)">恢复上架</button><button type="button" @click="askDeleteProduct(product)">删除</button></div>
               </article>
             </template>
 
             <template v-else-if="activeMyTab === 'wanted'">
               <div v-if="myWanted.length === 0" class="empty-state">你还没有发布求购</div>
-              <article v-for="item in myWanted" :key="item.id" class="wanted-card my-wanted-card"><strong>{{ item.itemName }}</strong><b class="wanted-budget">预算 ￥{{ item.budget }}</b><p>{{ item.description || '暂无补充描述' }}</p><span>{{ getConditionLabel(item.expectCondition) }} · {{ item.campusId ? getCampusName(item.campusId) : '不限校区' }}</span><em :class="['status-pill', `status-${item.status.toLowerCase()}`]">{{ getWantedStatusLabel(item.status) }}</em><div v-if="item.status === 'OPEN'" class="review-actions"><button @click="editWanted(item)">修改</button><button @click="changeWantedStatus(item, 'match')">已找到卖家</button><button @click="changeWantedStatus(item, 'close')">关闭</button></div><div v-else-if="item.status !== 'CLOSED'" class="review-actions"><button @click="changeWantedStatus(item, 'close')">关闭求购</button></div></article>
+              <article v-for="item in myWanted" :key="item.id" class="wanted-card my-wanted-card"><strong>{{ item.itemName }}</strong><b class="wanted-budget">预算 ￥{{ item.budget }}</b><p>{{ item.description || '暂无补充描述' }}</p><span>{{ getConditionLabel(item.expectCondition) }} · {{ item.campusId ? getCampusName(item.campusId) : '不限校区' }}</span><em :class="['status-pill', `status-${item.status.toLowerCase()}`]">{{ getWantedStatusLabel(item.status) }}</em><div class="review-actions"><button type="button" @click="openWantedDetail(item)">查看详情</button><button v-if="item.status === 'OPEN'" @click="editWanted(item)">修改</button><button v-if="item.status === 'OPEN'" @click="changeWantedStatus(item, 'match')">已找到卖家</button><button v-if="item.status !== 'CLOSED'" @click="changeWantedStatus(item, 'close')">关闭求购</button></div></article>
             </template>
 
             <template v-else>
@@ -1876,7 +1942,7 @@ onMounted(loadMe)
       <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
     </section>
 
-    <div v-if="noticeDialog.visible" class="confirm-overlay" role="dialog" aria-modal="true" @click.self="closeNoticeDialog">
+    <div v-if="noticeDialog.visible" class="confirm-overlay notice-overlay" role="dialog" aria-modal="true" @click.self="closeNoticeDialog">
       <article :class="['notice-dialog', noticeDialog.type]">
         <h2>{{ noticeDialog.title }}</h2>
         <p>{{ noticeDialog.content }}</p>

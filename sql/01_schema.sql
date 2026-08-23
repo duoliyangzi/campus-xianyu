@@ -93,7 +93,7 @@ CREATE TABLE `report_reason` (
 -- 商品（A：发布管理；C：审核）
 -- condition_level: NEW | LIKE_NEW | GOOD | FAIR | POOR  （新旧程度，代码枚举）
 -- trade_method: FACE | MAIL | BOTH                  （交易方式，代码枚举）
--- status: PENDING | PUBLISHED | OFF_SHELF | REJECTED （商品状态，代码枚举）
+-- status: PENDING | PUBLISHED | OFF_SHELF | REJECTED | DELETED （商品状态，代码枚举；DELETED为软删除）
 -- ----------------------------
 DROP TABLE IF EXISTS `product`;
 CREATE TABLE `product` (
