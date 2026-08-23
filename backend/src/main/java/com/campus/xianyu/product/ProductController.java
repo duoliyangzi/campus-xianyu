@@ -5,11 +5,13 @@ import com.campus.xianyu.aiaudit.AiAuditService;
 import com.campus.xianyu.auth.TokenService;
 import com.campus.xianyu.common.ApiResponse;
 import com.campus.xianyu.common.PageResponse;
+import com.campus.xianyu.common.SearchText;
 import com.campus.xianyu.user.AppUser;
 import com.campus.xianyu.user.UserRepository;
 import jakarta.validation.Valid;
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -21,6 +23,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -82,13 +85,6 @@ public class ProductController {
         }
 
         Specification<Product> specification = (root, query, builder) -> builder.equal(root.get("status"), "PUBLISHED");
-        if (keyword != null && !keyword.isBlank()) {
-            String pattern = "%" + keyword.trim().toLowerCase() + "%";
-            specification = specification.and((root, query, builder) -> builder.or(
-                    builder.like(builder.lower(root.get("title")), pattern),
-                    builder.like(builder.lower(root.get("description")), pattern)
-            ));
-        }
         if (categoryId != null) {
             specification = specification.and((root, query, builder) -> builder.equal(root.get("categoryId"), categoryId));
         }
@@ -108,9 +104,19 @@ public class ProductController {
             specification = specification.and((root, query, builder) -> builder.equal(root.get("sellerId"), sellerId));
         }
 
+        Sort newestFirst = Sort.by(Sort.Direction.DESC, "createdAt");
+        if (keyword != null && !keyword.isBlank()) {
+            List<ProductResponse> matchingProducts = toResponses(productRepository.findAll(specification, newestFirst))
+                    .stream()
+                    .filter(product -> productSearchScore(keyword, product) > 0)
+                    .sorted(Comparator.comparingInt((ProductResponse product) -> productSearchScore(keyword, product)).reversed())
+                    .toList();
+            return ApiResponse.ok(PageResponse.fromList(matchingProducts, page, size));
+        }
+
         Page<Product> products = productRepository.findAll(
                 specification,
-                PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"))
+                PageRequest.of(page, size, newestFirst)
         );
         List<ProductResponse> content = toResponses(products.getContent());
         return ApiResponse.ok(PageResponse.from(products, content));
@@ -140,15 +146,28 @@ public class ProductController {
             @RequestHeader(value = "Authorization", required = false) String authorization
     ) {
         AppUser user = currentUser(authorization);
-        List<ProductResponse> products = toResponses(productRepository.findBySellerIdOrderByCreatedAtDesc(user.getId()));
+        List<ProductResponse> products = toResponses(
+                productRepository.findBySellerIdAndStatusNotOrderByCreatedAtDesc(user.getId(), "DELETED")
+        );
         return ApiResponse.ok(products);
     }
 
     @GetMapping("/{id}")
-    public ApiResponse<ProductResponse> detail(@PathVariable Long id) {
+    public ApiResponse<ProductResponse> detail(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable Long id
+    ) {
         Product product = productRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("商品不存在"));
-        if (!"PUBLISHED".equals(product.getStatus())) {
+        if ("DELETED".equals(product.getStatus())) {
+            throw new IllegalArgumentException("商品不存在");
+        }
+        Long viewerId = tokenService.findUserId(authorization).orElse(null);
+        boolean ownerViewing = viewerId != null && product.getSellerId().equals(viewerId);
+        boolean adminViewing = viewerId != null && userRepository.findById(viewerId)
+                .map(user -> "ADMIN".equals(user.getRole()))
+                .orElse(false);
+        if (!"PUBLISHED".equals(product.getStatus()) && !ownerViewing && !adminViewing) {
             throw new IllegalArgumentException("商品不存在或尚未发布");
         }
         AppUser seller = userRepository.findById(product.getSellerId())
@@ -165,6 +184,9 @@ public class ProductController {
     ) {
         AppUser user = requireApprovedStudent(authorization);
         Product product = ownedProduct(id, user.getId());
+        if ("DELETED".equals(product.getStatus())) {
+            throw new IllegalArgumentException("已删除商品不能修改");
+        }
         if ("OFF_SHELF".equals(product.getStatus())) {
             throw new IllegalArgumentException("已下架商品不能修改");
         }
@@ -186,6 +208,9 @@ public class ProductController {
     ) {
         AppUser user = currentUser(authorization);
         Product product = ownedProduct(id, user.getId());
+        if ("DELETED".equals(product.getStatus())) {
+            throw new IllegalArgumentException("商品已删除");
+        }
         product.setStatus("OFF_SHELF");
         Product savedProduct = productRepository.save(product);
         return ApiResponse.ok("商品已下架", ProductResponse.from(savedProduct, user, imageUrlsFor(savedProduct.getId())));
@@ -207,6 +232,23 @@ public class ProductController {
         product.setAuditRemark(null);
         Product savedProduct = productRepository.save(product);
         return ApiResponse.ok("商品已恢复并重新提交审核", ProductResponse.from(savedProduct, user, imageUrlsFor(savedProduct.getId())));
+    }
+
+    @DeleteMapping("/{id}")
+    @Transactional
+    public ApiResponse<Void> delete(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable Long id
+    ) {
+        AppUser user = currentUser(authorization);
+        Product product = ownedProduct(id, user.getId());
+        if ("DELETED".equals(product.getStatus())) {
+            return ApiResponse.ok("商品已删除", null);
+        }
+        product.setStatus("DELETED");
+        product.setAuditRemark("卖家已删除");
+        productRepository.save(product);
+        return ApiResponse.ok("商品已删除", null);
     }
 
     private void fillProduct(Product product, ProductRequest request, List<String> imageUrls) {
@@ -322,5 +364,15 @@ public class ProductController {
                         imageUrlsByProduct.getOrDefault(product.getId(), List.of())
                 ))
                 .toList();
+    }
+
+    private int productSearchScore(String keyword, ProductResponse product) {
+        return Math.max(
+                SearchText.score(keyword, product.title(), 300),
+                Math.max(
+                        SearchText.score(keyword, product.seller() == null ? null : product.seller().nickname(), 200),
+                        SearchText.score(keyword, product.description(), 100)
+                )
+        );
     }
 }

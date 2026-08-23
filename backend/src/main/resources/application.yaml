@@ -25,3 +25,8 @@ spring:
 
 server:
   port: 8080
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:campus-xianyu-local-development-secret-2026}
+    expiration-seconds: ${JWT_EXPIRATION_SECONDS:86400}

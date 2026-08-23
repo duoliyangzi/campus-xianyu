@@ -31,6 +31,7 @@
 | status | PUBLISHED | 已发布 |
 | status | OFF_SHELF | 已下架 |
 | status | REJECTED | 审核拒绝 |
+| status | DELETED | 已删除（软删除，不再对用户展示） |
 
 文档中的「疑似违规」建议体现在 AI 审核 `suggestion=REVIEW` + `risk_level`，商品仍保持 `PENDING`，由管理员确认。
 

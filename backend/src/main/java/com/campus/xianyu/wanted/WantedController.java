@@ -3,11 +3,13 @@ package com.campus.xianyu.wanted;
 import com.campus.xianyu.auth.TokenService;
 import com.campus.xianyu.common.ApiResponse;
 import com.campus.xianyu.common.PageResponse;
+import com.campus.xianyu.common.SearchText;
 import com.campus.xianyu.user.AppUser;
 import com.campus.xianyu.user.UserRepository;
 import jakarta.validation.Valid;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Comparator;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -55,13 +57,6 @@ public class WantedController {
         validatePage(page, size);
         validateBudgetRange(minBudget, maxBudget);
         Specification<Wanted> specification = (root, query, builder) -> builder.equal(root.get("status"), "OPEN");
-        if (keyword != null && !keyword.isBlank()) {
-            String pattern = "%" + keyword.trim().toLowerCase() + "%";
-            specification = specification.and((root, query, builder) -> builder.or(
-                    builder.like(builder.lower(root.get("itemName")), pattern),
-                    builder.like(builder.lower(root.get("description")), pattern)
-            ));
-        }
         if (campusId != null) {
             specification = specification.and((root, query, builder) -> builder.equal(root.get("campusId"), campusId));
         }
@@ -78,9 +73,19 @@ public class WantedController {
             specification = specification.and((root, query, builder) -> builder.lessThanOrEqualTo(root.get("budget"), maxBudget));
         }
 
+        Sort newestFirst = Sort.by(Sort.Direction.DESC, "createdAt");
+        if (keyword != null && !keyword.isBlank()) {
+            List<WantedResponse> matchingWanted = toResponses(wantedRepository.findAll(specification, newestFirst))
+                    .stream()
+                    .filter(wanted -> wantedSearchScore(keyword, wanted) > 0)
+                    .sorted(Comparator.comparingInt((WantedResponse wanted) -> wantedSearchScore(keyword, wanted)).reversed())
+                    .toList();
+            return ApiResponse.ok(PageResponse.fromList(matchingWanted, page, size));
+        }
+
         Page<Wanted> wantedPage = wantedRepository.findAll(
                 specification,
-                PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"))
+                PageRequest.of(page, size, newestFirst)
         );
         List<WantedResponse> content = toResponses(wantedPage.getContent());
         return ApiResponse.ok(PageResponse.from(wantedPage, content));
@@ -234,5 +239,15 @@ public class WantedController {
         return wantedItems.stream()
                 .map(wanted -> WantedResponse.from(wanted, publishers.get(wanted.getBuyerId())))
                 .toList();
+    }
+
+    private int wantedSearchScore(String keyword, WantedResponse wanted) {
+        return Math.max(
+                SearchText.score(keyword, wanted.itemName(), 300),
+                Math.max(
+                        SearchText.score(keyword, wanted.publisher() == null ? null : wanted.publisher().nickname(), 200),
+                        SearchText.score(keyword, wanted.description(), 100)
+                )
+        );
     }
 }
