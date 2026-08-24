@@ -1,7 +1,6 @@
 package com.campus.xianyu.dict;
 
 import com.campus.xianyu.product.ProductRepository;
-import jakarta.annotation.PostConstruct;
 import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,19 +15,11 @@ public class CategoryService {
         this.productRepository = productRepository;
     }
 
-    @PostConstruct
-    public void init() {
-        recompactSortOrders();
-    }
-
     public List<Category> listEnabled() {
         return categoryRepository.findByStatusOrderBySortOrderAscIdAsc("ENABLED");
     }
 
-    @Transactional
     public List<Category> listForAdmin() {
-        categoryRepository.deleteByStatus("DISABLED");
-        recompactSortOrders();
         return listEnabled();
     }
 

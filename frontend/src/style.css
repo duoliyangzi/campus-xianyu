@@ -345,6 +345,24 @@ input:focus, select:focus, textarea:focus { border-color: #2563eb; box-shadow: 0
   color: #64748b;
 }
 
+.order-dialog {
+  position: relative;
+}
+
+.order-dialog .detail-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  float: none;
+  margin: 0;
+}
+
+.datetime-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
 .image-upload-box {
   display: grid;
   gap: 8px;
@@ -703,6 +721,17 @@ input:focus, select:focus, textarea:focus { border-color: #2563eb; box-shadow: 0
   display: grid;
   gap: 8px;
   margin-top: 12px;
+}
+
+.chat-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.chat-actions .primary-button {
+  margin-left: auto;
 }
 
 .chat-messages {
