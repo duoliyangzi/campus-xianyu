@@ -508,16 +508,22 @@ GET /api/wanted?keyword=自行车&campusId=1&status=OPEN&page=1&size=10
 GET /api/wanted/{id}
 ```
 
-### 3.5 卖家接单沟通
+### 3.5 修改和管理自己的求购
 
 ```text
-POST /api/wanted/{id}/accept
+GET /api/wanted/mine
+PUT /api/wanted/{id}
+PUT /api/wanted/{id}/match
+PUT /api/wanted/{id}/close
 ```
 
 说明：
 
-- 接单后可创建私聊会话
-- 求购状态可变为 `MATCHED`
+- 发布者可以修改状态为 `OPEN` 的求购。
+- `PUT /api/wanted/{id}/match` 无需请求体，将状态从 `OPEN` 改为 `MATCHED`。
+- `PUT /api/wanted/{id}/close` 无需请求体，将未关闭的求购改为 `CLOSED`。
+- 当前 `MATCHED` 只表示发布者已找到卖家，尚未记录具体接单卖家。
+- 其他学生可通过私聊接口联系求购发布者。
 
 ---
 
@@ -547,6 +553,35 @@ GET /api/orders
 GET /api/orders/{id}
 PUT /api/orders/{id}/status
 ```
+
+订单状态变更接口不直接接收目标状态，而是接收操作类型：
+
+```json
+{
+  "action": "CONFIRM_TRADE",
+  "meetTime": "2026-08-25 15:30:00",
+  "meetLocation": "本部图书馆门口",
+  "remark": "请提前联系"
+}
+```
+
+`action` 取值：
+
+```text
+UPDATE_DETAILS
+CONFIRM_TRADE
+BUYER_CONFIRM_COMPLETE
+SELLER_CONFIRM_COMPLETE
+```
+
+说明：
+
+- `UPDATE_DETAILS`：仅买家可在待沟通阶段修改时间、地点和备注。
+- `CONFIRM_TRADE`：买家和卖家分别确认交易约定；双方确认后才进入待交易。
+- `BUYER_CONFIRM_COMPLETE`：仅买家在待交易阶段确认收货。
+- `SELLER_CONFIRM_COMPLETE`：仅卖家在待交易阶段确认交易完成。
+- 买卖双方都确认完成后，订单才变为 `COMPLETED`，关联商品随即下架。
+- 同一买家对同一商品已有待沟通或待交易订单时，不能重复创建订单。
 
 订单状态：
 

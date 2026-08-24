@@ -20,8 +20,14 @@ class TokenServiceTests {
     @Test
     void tamperedTokenIsRejected() {
         String token = tokenService.issueToken(42L);
-        String tampered = token.substring(0, token.length() - 1)
-                + (token.endsWith("a") ? "b" : "a");
+        String[] parts = token.split("\\.");
+        String signature = parts[2];
+        int changedIndex = signature.length() / 2;
+        char changedCharacter = signature.charAt(changedIndex) == 'a' ? 'b' : 'a';
+        String tamperedSignature = signature.substring(0, changedIndex)
+                + changedCharacter
+                + signature.substring(changedIndex + 1);
+        String tampered = parts[0] + "." + parts[1] + "." + tamperedSignature;
 
         assertThat(tokenService.findUserId("Bearer " + tampered)).isEmpty();
     }
