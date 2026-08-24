@@ -47,7 +47,8 @@ const chatForm = reactive({ content: '' })
 const myOrders = ref([])
 const reportReasons = ref([])
 const reportDialog = reactive({ visible: false, targetType: '', targetId: null, reasonId: '', description: '' })
-const orderForm = reactive({ meetTime: '', meetLocation: '', remark: '' })
+const orderForm = reactive({ meetDate: '', meetTimePart: '', meetLocation: '', remark: '' })
+const orderDialog = reactive({ visible: false, product: null })
 const pendingProducts = ref([])
 const productReviewStatus = ref('PENDING')
 const adminReports = ref([])
@@ -201,9 +202,54 @@ function resetLoginForm() {
 }
 
 function resetOrderForm() {
-  orderForm.meetTime = ''
+  orderForm.meetDate = ''
+  orderForm.meetTimePart = ''
   orderForm.meetLocation = ''
   orderForm.remark = ''
+}
+
+function formatMeetTime(value) {
+  if (!value) return null
+  const normalized = String(value).replace('T', ' ')
+  return normalized.length === 16 ? `${normalized}:00` : normalized
+}
+
+function formatMeetTimeFromParts(date, timePart) {
+  if (!date) return null
+  const time = timePart || '00:00'
+  const normalizedTime = time.length === 5 ? `${time}:00` : time
+  return `${date} ${normalizedTime}`
+}
+
+function promptAuthRequired(actionLabel) {
+  showNotice({
+    type: 'info',
+    title: '需要先实名认证',
+    content: `${actionLabel}需要先通过学生实名认证。当前状态：${authStatusText.value}。请前往「我的」完成认证。`
+  })
+}
+
+function ensureApprovedStudent(actionLabel) {
+  if (isAdmin.value) return true
+  if (!isApprovedStudent.value) {
+    promptAuthRequired(actionLabel)
+    return false
+  }
+  return true
+}
+
+function openOrderDialog() {
+  if (!selectedProduct.value) return
+  if (!ensureApprovedStudent('购买商品')) return
+  resetOrderForm()
+  orderDialog.product = selectedProduct.value
+  orderDialog.visible = true
+}
+
+function closeOrderDialog() {
+  orderDialog.visible = false
+  orderDialog.product = null
+  resetOrderForm()
 }
 
 function updateCurrentUser(user) {
@@ -261,11 +307,16 @@ async function apiRequest(path, options = {}) {
 
   const result = await response.json().catch(() => null)
   if (!response.ok || !result || result.code !== 0) {
-    const requestError = new Error(result?.message || `请求失败：${response.status}`)
-    if (result?.message?.includes('请先登录')) {
+    const errorMessage = result?.message || `请求失败：${response.status}`
+    if (/请先登录|令牌|登录已失效|未登录/.test(errorMessage)) {
       clearCurrentSession()
+    } else if (/需要管理员权限|无权/.test(errorMessage)) {
+      enterAppByRole()
     }
-    throw requestError
+    throw new Error(errorMessage)
+  }
+  if (options.withMessage) {
+    return { data: result.data, message: result.message }
   }
   return result.data
 }
@@ -354,6 +405,7 @@ async function loadProductComments(productId) {
 
 async function submitComment() {
   if (!selectedProduct.value) return
+  if (!ensureApprovedStudent('发表留言')) return
   if (!commentForm.content.trim()) {
     showNotice({ type: 'error', title: '提示', content: '请输入留言内容' })
     return
@@ -446,6 +498,7 @@ function openPendingChat({ peerUser, productId = null, wantedId = null }) {
 
 function startChatWithSeller() {
   if (!selectedProduct.value?.seller) return
+  if (!ensureApprovedStudent('联系卖家')) return
   openPendingChat({
     peerUser: selectedProduct.value.seller,
     productId: selectedProduct.value.id
@@ -471,20 +524,21 @@ async function loadMyOrders() {
   }
 }
 
-async function createOrderFromProduct() {
-  if (!selectedProduct.value) return
+async function submitOrderFromDialog() {
+  if (!orderDialog.product) return
+  if (!ensureApprovedStudent('购买商品')) return
   loading.value = true
   try {
     const payload = {
-      productId: selectedProduct.value.id,
-      meetTime: orderForm.meetTime || null,
+      productId: orderDialog.product.id,
+      meetTime: formatMeetTimeFromParts(orderForm.meetDate, orderForm.meetTimePart),
       meetLocation: orderForm.meetLocation || null,
       remark: orderForm.remark || null,
       conversationId: selectedConversation.value?.id || null
     }
     await apiRequest('/orders', { method: 'POST', body: JSON.stringify(payload) })
     message.value = '订单创建成功，可在“我的订单”查看'
-    resetOrderForm()
+    closeOrderDialog()
     selectedProduct.value = null
     activeStudentTab.value = 'profile'
     activeMyTab.value = 'orders'
@@ -496,19 +550,71 @@ async function createOrderFromProduct() {
   }
 }
 
-async function updateOrderStatus(order, status) {
+async function performOrderAction(order, action, extra = {}) {
   loading.value = true
   try {
-    await apiRequest(`/orders/${order.id}/status`, {
+    const payload = { action, ...extra }
+    if (payload.meetTime) {
+      payload.meetTime = formatMeetTime(payload.meetTime)
+    }
+    const result = await apiRequest(`/orders/${order.id}/status`, {
       method: 'PUT',
-      body: JSON.stringify({ status })
+      body: JSON.stringify(payload),
+      withMessage: true
     })
-    message.value = '订单状态已更新'
+    message.value = result.message || '订单状态已更新'
     await Promise.all([loadMyOrders(), loadProducts(productPage.page), loadMyProducts()])
   } catch (error) {
     showNotice({ type: 'error', title: '操作失败', content: error.message })
   } finally {
     loading.value = false
+  }
+}
+
+function isOrderBuyer(order) {
+  return order.buyerId === currentUser.id
+}
+
+function isOrderSeller(order) {
+  return order.sellerId === currentUser.id
+}
+
+function hasOrderConfirmedByMe(order) {
+  if (order.status === 'PENDING_CHAT' || order.status === 'PENDING_TRADE') {
+    return isOrderBuyer(order) ? order.buyerConfirmed : order.sellerConfirmed
+  }
+  return false
+}
+
+function orderConfirmHint(order) {
+  if (order.status === 'PENDING_CHAT') {
+    if (hasOrderConfirmedByMe(order)) {
+      return isOrderBuyer(order) ? '您已确认，等待卖家确认交易约定' : '您已确认，等待买家确认交易约定'
+    }
+    return '请买卖双方都确认交易约定后，订单才会进入待交易'
+  }
+  if (order.status === 'PENDING_TRADE') {
+    if (hasOrderConfirmedByMe(order)) {
+      return isOrderBuyer(order) ? '您已确认收货，等待卖家确认完成' : '您已确认完成，等待买家确认收货'
+    }
+    return '请买卖双方都确认后，交易才会完成'
+  }
+  return ''
+}
+
+async function createOrderFromProduct() {
+  if (!ensureApprovedStudent('购买商品')) return
+  openOrderDialog()
+}
+
+async function updateOrderStatus(order, status) {
+  if (status === 'PENDING_TRADE') {
+    await performOrderAction(order, 'CONFIRM_TRADE')
+    return
+  }
+  if (status === 'COMPLETED') {
+    const action = isOrderBuyer(order) ? 'BUYER_CONFIRM_COMPLETE' : 'SELLER_CONFIRM_COMPLETE'
+    await performOrderAction(order, action)
   }
 }
 
@@ -521,6 +627,7 @@ async function loadReportReasons() {
 }
 
 function openReportDialog(targetType, targetId) {
+  if (targetType === 'PRODUCT' && !ensureApprovedStudent('举报商品')) return
   reportDialog.visible = true
   reportDialog.targetType = targetType
   reportDialog.targetId = targetId
@@ -885,6 +992,9 @@ async function changeWantedStatus(item, action) {
     await apiRequest(`/wanted/${item.id}/${action}`, { method: 'PUT' })
     message.value = action === 'match' ? '已标记为找到卖家。' : '求购已关闭。'
     await Promise.all([loadWanted(wantedPage.page), loadMyWanted()])
+    if (selectedWanted.value?.id === item.id) {
+      selectedWanted.value = await apiRequest(`/wanted/${item.id}`)
+    }
   } catch (error) {
     showNotice({ type: 'error', title: '操作失败', content: error.message })
   } finally {
@@ -964,7 +1074,7 @@ function selectStudentTab(tabKey) {
   if (tabKey === 'home') loadProducts(productPage.page)
   if (tabKey === 'wanted') Promise.all([loadWanted(wantedPage.page), loadMyWanted()])
   if (tabKey === 'messages') {
-    loadConversations()
+    Promise.all([loadConversations(), loadMyWanted()])
   } else if (!isAdmin.value && currentUser.id) {
     loadConversations()
   }
@@ -1667,6 +1777,9 @@ onMounted(loadMe)
 
         <section v-else-if="activeStudentTab === 'messages'" class="panel">
           <h2>消息中心</h2>
+          <p v-if="!isApprovedStudent" class="intro">使用私聊功能需要先通过学生实名认证。当前状态：{{ authStatusText }}</p>
+          <button v-if="!isApprovedStudent" class="primary-button" type="button" @click="openAuthPage">去实名认证</button>
+          <template v-else>
           <p class="intro">查看私聊会话，与卖家沟通并约定线下交易。</p>
           <div v-if="selectedConversation || pendingChat" class="chat-panel">
             <button class="text-button" type="button" @click="selectedConversation = null; pendingChat = null; chatMessages = []">返回会话列表</button>
@@ -1700,6 +1813,7 @@ onMounted(loadMe)
               </div>
             </article>
           </template>
+          </template>
         </section>
 
         <section v-else class="panel">
@@ -1722,7 +1836,6 @@ onMounted(loadMe)
           <div class="action-list">
             <button class="primary-button" type="button" @click="openAuthPage">{{ currentUser.authStatus === 'UNAUTH' ? '去实名认证' : '查看/更新认证信息' }}</button>
             <button class="secondary-button" type="button" @click="activeStudentTab = 'publish'">发布商品</button>
-            <p class="hint">留言、私聊、订单与举报功能已接入。</p>
           </div>
 
           <section class="section-block">
@@ -1763,10 +1876,15 @@ onMounted(loadMe)
                   <p>￥{{ order.product?.price }} · {{ getOrderStatusLabel(order.status) }}</p>
                   <p v-if="order.meetLocation">约定地点：{{ order.meetLocation }}</p>
                   <p v-if="order.meetTime">约定时间：{{ order.meetTime }}</p>
+                  <p v-if="order.status === 'PENDING_CHAT' || order.status === 'PENDING_TRADE'">
+                    确认进度：买家{{ order.buyerConfirmed ? '已确认' : '待确认' }} · 卖家{{ order.sellerConfirmed ? '已确认' : '待确认' }}
+                  </p>
+                  <p v-if="orderConfirmHint(order)" class="hint">{{ orderConfirmHint(order) }}</p>
                 </div>
                 <div class="review-actions">
-                  <button v-if="order.status === 'PENDING_CHAT'" type="button" @click="updateOrderStatus(order, 'PENDING_TRADE')">进入待交易</button>
-                  <button v-if="order.status === 'PENDING_TRADE'" type="button" @click="updateOrderStatus(order, 'COMPLETED')">标记完成</button>
+                  <button v-if="order.status === 'PENDING_CHAT' && !hasOrderConfirmedByMe(order)" type="button" @click="updateOrderStatus(order, 'PENDING_TRADE')">确认交易约定</button>
+                  <button v-if="order.status === 'PENDING_TRADE' && isOrderBuyer(order) && !order.buyerConfirmed" type="button" @click="updateOrderStatus(order, 'COMPLETED')">确认收货</button>
+                  <button v-if="order.status === 'PENDING_TRADE' && isOrderSeller(order) && !order.sellerConfirmed" type="button" @click="updateOrderStatus(order, 'COMPLETED')">确认交易完成</button>
                 </div>
               </article>
             </template>
@@ -2010,7 +2128,7 @@ onMounted(loadMe)
         </button>
         <div v-if="selectedProduct.seller && selectedProduct.seller.id !== currentUser.id" class="detail-actions">
           <button class="primary-button" type="button" @click="startChatWithSeller">联系卖家</button>
-          <button class="secondary-button" type="button" @click="createOrderFromProduct">我要购买</button>
+          <button class="secondary-button" type="button" @click="openOrderDialog">我要购买</button>
           <button class="secondary-button" type="button" @click="openReportDialog('PRODUCT', selectedProduct.id)">举报商品</button>
         </div>
         <section class="section-block">
@@ -2023,14 +2141,30 @@ onMounted(loadMe)
           </article>
           <form class="comment-form" @submit.prevent="submitComment">
             <textarea v-model.trim="commentForm.content" rows="2" placeholder="向卖家提问..."></textarea>
-            <button class="primary-button" type="submit" :disabled="loading">发表留言</button>
+            <button v-if="!isApprovedStudent" class="primary-button" type="button" @click="promptAuthRequired('发表留言')">去实名认证后留言</button>
+            <button v-else class="primary-button" type="submit" :disabled="loading">发表留言</button>
           </form>
         </section>
-        <label>约定地点<input v-model.trim="orderForm.meetLocation" type="text" placeholder="例如：图书馆门口" /></label>
-        <label>约定时间<input v-model="orderForm.meetTime" type="datetime-local" /></label>
-        <label>备注<textarea v-model.trim="orderForm.remark" rows="2" placeholder="交易备注"></textarea></label>
         <small>浏览 {{ selectedProduct.viewCount }} 次 · {{ selectedProduct.createdAt }}</small>
       </article>
+    </div>
+
+    <div v-if="orderDialog.visible" class="confirm-overlay report-overlay" role="dialog" aria-modal="true" @click.self="closeOrderDialog">
+      <form class="remark-dialog order-dialog" @submit.prevent="submitOrderFromDialog">
+        <button class="detail-close" type="button" @click="closeOrderDialog">×</button>
+        <h2>填写交易约定</h2>
+        <p>确认购买 {{ orderDialog.product?.title }} 后，将与卖家进入待沟通状态。</p>
+        <label>约定地点<input v-model.trim="orderForm.meetLocation" type="text" placeholder="例如：图书馆门口" /></label>
+        <div class="datetime-row">
+          <label>约定日期<input v-model="orderForm.meetDate" type="date" /></label>
+          <label>约定时间<input v-model="orderForm.meetTimePart" type="time" /></label>
+        </div>
+        <label>备注<textarea v-model.trim="orderForm.remark" rows="2" placeholder="交易备注"></textarea></label>
+        <div class="confirm-actions">
+          <button class="secondary-button" type="button" @click="closeOrderDialog">取消</button>
+          <button class="primary-button" type="submit" :disabled="loading">确认购买</button>
+        </div>
+      </form>
     </div>
 
     <div v-if="reportDialog.visible" class="confirm-overlay report-overlay" role="dialog" aria-modal="true" @click.self="closeReportDialog">
@@ -2050,7 +2184,27 @@ onMounted(loadMe)
     </div>
 
     <div v-if="selectedWanted" class="confirm-overlay detail-overlay" role="dialog" aria-modal="true" @click.self="selectedWanted = null">
-      <article class="detail-dialog"><button class="detail-close" @click="selectedWanted = null">×</button><p class="eyebrow">求购详情</p><h2>{{ selectedWanted.itemName }}</h2><b class="detail-price">预算 ￥{{ selectedWanted.budget }}</b><p>{{ selectedWanted.description || '发布者没有填写补充描述。' }}</p><div class="detail-meta"><span>{{ getConditionLabel(selectedWanted.expectCondition) }}</span><span>{{ selectedWanted.campusId ? getCampusName(selectedWanted.campusId) : '不限校区' }}</span><span>{{ getWantedStatusLabel(selectedWanted.status) }}</span></div><button v-if="selectedWanted.publisher" class="publisher-panel" type="button" @click="openPublicProfile(selectedWanted.publisher.id)"><span class="public-avatar"><img v-if="selectedWanted.publisher.avatarUrl" :src="selectedWanted.publisher.avatarUrl" alt="" /><b v-else>{{ avatarText(selectedWanted.publisher) }}</b></span><span><strong>{{ selectedWanted.publisher.nickname }}</strong><small>{{ selectedWanted.publisher.college || '校园学生' }} · {{ selectedWanted.publisher.authStatus === 'APPROVED' ? '已认证' : '未认证' }}</small></span><i>查看主页 ›</i></button><div v-if="selectedWanted.publisher && selectedWanted.publisher.id !== currentUser.id" class="detail-actions"><button class="primary-button" type="button" @click="startChatWithPublisher">联系发布者</button></div><small>发布于 {{ selectedWanted.createdAt }}</small></article>
+      <article class="detail-dialog">
+        <button class="detail-close" @click="selectedWanted = null">×</button>
+        <p class="eyebrow">求购详情</p>
+        <h2>{{ selectedWanted.itemName }}</h2>
+        <b class="detail-price">预算 ￥{{ selectedWanted.budget }}</b>
+        <p>{{ selectedWanted.description || '发布者没有填写补充描述。' }}</p>
+        <div class="detail-meta">
+          <span>{{ getConditionLabel(selectedWanted.expectCondition) }}</span>
+          <span>{{ selectedWanted.campusId ? getCampusName(selectedWanted.campusId) : '不限校区' }}</span>
+          <span>{{ getWantedStatusLabel(selectedWanted.status) }}</span>
+        </div>
+        <button v-if="selectedWanted.publisher" class="publisher-panel" type="button" @click="openPublicProfile(selectedWanted.publisher.id)">
+          <span class="public-avatar"><img v-if="selectedWanted.publisher.avatarUrl" :src="selectedWanted.publisher.avatarUrl" alt="" /><b v-else>{{ avatarText(selectedWanted.publisher) }}</b></span>
+          <span><strong>{{ selectedWanted.publisher.nickname }}</strong><small>{{ selectedWanted.publisher.college || '校园学生' }} · {{ selectedWanted.publisher.authStatus === 'APPROVED' ? '已认证' : '未认证' }}</small></span>
+          <i>查看主页 ›</i>
+        </button>
+        <div v-if="selectedWanted.publisher && selectedWanted.publisher.id !== currentUser.id" class="detail-actions">
+          <button class="primary-button" type="button" @click="startChatWithPublisher">联系发布者</button>
+        </div>
+        <small>发布于 {{ selectedWanted.createdAt }}</small>
+      </article>
     </div>
 
     <div v-if="publicProfile" class="confirm-overlay" role="dialog" aria-modal="true" @click.self="closePublicProfile">

@@ -46,6 +46,12 @@ public class TradeOrder {
     @Column(name = "conversation_id")
     private Long conversationId;
 
+    @Column(name = "buyer_confirmed", nullable = false)
+    private Boolean buyerConfirmed = false;
+
+    @Column(name = "seller_confirmed", nullable = false)
+    private Boolean sellerConfirmed = false;
+
     @Column(name = "created_at", insertable = false, updatable = false)
     private LocalDateTime createdAt;
 

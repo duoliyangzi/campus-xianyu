@@ -6,7 +6,7 @@ import jakarta.validation.constraints.Size;
 import java.time.LocalDateTime;
 
 public record OrderStatusRequest(
-        @NotBlank(message = "订单状态不能为空") String status,
+        @NotBlank(message = "操作类型不能为空") String action,
         @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
         LocalDateTime meetTime,
         @Size(max = 200, message = "约定地点不能超过200字") String meetLocation,
