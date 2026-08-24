@@ -228,6 +228,8 @@ CREATE TABLE `trade_order` (
   `meet_location`    VARCHAR(200) DEFAULT NULL COMMENT '约定地点',
   `remark`           VARCHAR(255) DEFAULT NULL,
   `conversation_id`  BIGINT UNSIGNED DEFAULT NULL,
+  `buyer_confirmed`  TINYINT(1) NOT NULL DEFAULT 0 COMMENT '买家当前阶段确认状态',
+  `seller_confirmed` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '卖家当前阶段确认状态',
   `created_at`       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at`       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
