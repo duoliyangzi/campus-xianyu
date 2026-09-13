@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { match as matchPinyin } from 'pinyin-pro'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
@@ -49,6 +49,113 @@ const reportReasons = ref([])
 const reportDialog = reactive({ visible: false, targetType: '', targetId: null, reasonId: '', description: '' })
 const orderForm = reactive({ meetDate: '', meetTimePart: '', meetLocation: '', remark: '' })
 const orderDialog = reactive({ visible: false, product: null })
+const aiAssistant = reactive({
+  visible: false,
+  loading: false,
+  mode: 'auto',
+  input: '',
+  messages: [],
+  llmEnabled: false,
+  llmModel: '',
+  userId: null
+})
+const aiModes = [
+  { id: 'auto', title: '自动', desc: '大模型语义判断客服/挂牌/求购/风控/搜商品' },
+  { id: 'support', title: '客服', desc: '认证、订单、退货等流程问答' },
+  { id: 'listing', title: '挂牌', desc: '生成出售文案，填入发布页' },
+  { id: 'wanted', title: '求购', desc: '生成求购文案，填入求购页' },
+  { id: 'risk', title: '风控', desc: '发布前文案风险预审' }
+]
+const aiPlaceholder = computed(() => {
+  const map = {
+    auto: '自动路由。试试：如何实名认证 / 现在有手机卖吗 / 发布求购跳绳 / 帮我写出售文案',
+    support: '【客服】只答平台流程。例如：如何实名认证？订单待沟通后怎么确认？如何举报？',
+    listing: '【挂牌】描述要卖的闲置。例如：出闲置高数第七版，九成新，希望 25 元，校内面交',
+    wanted: '【求购】描述想买的物品。例如：求购跳绳，预算 30，期望九成新，校内面交',
+    risk: '【风控】粘贴待发布标题+描述。例如：九成新手机，加微信私聊，便宜出'
+  }
+  return map[aiAssistant.mode] || map.auto
+})
+const aiEmptyHint = computed(() => {
+  const map = {
+    auto: '当前为自动模式：会识别客服 / 找货 / 挂牌 / 求购 / 风控。示例：现在有手机卖吗',
+    support: '当前为客服模式：只回答认证、订单、退货、举报等规则，不写挂牌/求购文案',
+    listing: '当前为挂牌模式：描述闲置后生成出售标题与描述，可一键填入发布页',
+    wanted: '当前为求购模式：说出想买什么，生成求购文案，可一键填入求购页',
+    risk: '当前为风控模式：粘贴待发布文案，返回 PASS / REVIEW / REJECT 预审建议'
+  }
+  return map[aiAssistant.mode] || map.auto
+})
+const aiBusy = computed(
+  () => aiAssistant.loading || aiAssistant.messages.some((m) => m.streaming)
+)
+const aiSendLabel = computed(() => {
+  if (aiAssistant.loading) return '思考中...'
+  if (aiAssistant.messages.some((m) => m.streaming)) return '生成中...'
+  return '发送'
+})
+const AI_CHAT_KEY_PREFIX = 'campus_xianyu_ai_chat_'
+function aiChatStorageKey(userId) {
+  return `${AI_CHAT_KEY_PREFIX}${userId || 'anonymous'}`
+}
+function loadAiChatHistoryLocal(userId) {
+  try {
+    const raw = localStorage.getItem(aiChatStorageKey(userId))
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+function loadAiChatHistory(userId) {
+  aiAssistant.messages = loadAiChatHistoryLocal(userId)
+}
+async function loadAiChatHistoryFromServer(userId) {
+  try {
+    const rows = await apiRequest('/ai/chat/history?limit=80')
+    if (Array.isArray(rows) && rows.length) {
+      aiAssistant.messages = rows.map((item) => ({
+        ...item,
+        products: (item.products || []).map((p) => ({
+          ...p,
+          coverUrl: normalizeMediaUrl(p.coverUrl || p.cover_url || '')
+        }))
+      }))
+      saveAiChatHistory()
+      return
+    }
+  } catch {
+    // 回退本地
+  }
+  loadAiChatHistory(userId)
+}
+function saveAiChatHistory() {
+  if (!aiAssistant.userId) return
+  try {
+    localStorage.setItem(aiChatStorageKey(aiAssistant.userId), JSON.stringify(aiAssistant.messages.slice(-80)))
+  } catch {
+    // ignore
+  }
+}
+async function scrollAiChatToBottom() {
+  await nextTick()
+  document.querySelectorAll('.ai-chat-list').forEach((el) => {
+    el.scrollTop = el.scrollHeight
+  })
+}
+function normalizeMediaUrl(url) {
+  if (!url) return ''
+  const text = String(url)
+  try {
+    if (text.startsWith('/uploads/')) return text
+    const parsed = new URL(text, window.location.origin)
+    if (parsed.pathname.startsWith('/uploads/')) return parsed.pathname + parsed.search
+  } catch {
+    // ignore
+  }
+  return text.replace(/^https?:\/\/[^/]+/, '')
+}
 const pendingProducts = ref([])
 const productReviewStatus = ref('PENDING')
 const adminReports = ref([])
@@ -252,6 +359,313 @@ function closeOrderDialog() {
   resetOrderForm()
 }
 
+async function openAiAssistant() {
+  if (!sessionStorage.getItem(TOKEN_KEY)) {
+    showNotice({ type: 'info', title: '提示', content: '请先登录后再使用 AI 客服' })
+    return
+  }
+  const userId = currentUser.value?.id || null
+  if (!userId) {
+    showNotice({ type: 'info', title: '提示', content: '请先登录后再使用 AI 客服' })
+    return
+  }
+  if (aiAssistant.userId !== userId) {
+    aiAssistant.userId = userId
+  }
+  await loadAiChatHistoryFromServer(userId)
+  aiAssistant.visible = true
+  try {
+    const health = await apiRequest('/ai/health')
+    aiAssistant.llmEnabled = Boolean(health.llmEnabled)
+    aiAssistant.llmModel = health.model || (health.llmEnabled ? '已接入大模型' : '')
+  } catch {
+    aiAssistant.llmEnabled = false
+    aiAssistant.llmModel = ''
+  }
+  await scrollAiChatToBottom()
+}
+
+function openAiAssistantFromProfile() {
+  openAiAssistant()
+}
+
+function closeAiAssistant() {
+  aiAssistant.visible = false
+}
+
+async function clearAiChatHistory() {
+  aiAssistant.messages = []
+  saveAiChatHistory()
+  try {
+    await apiRequest('/ai/chat/history', { method: 'DELETE' })
+  } catch {
+    // ignore
+  }
+}
+
+function selectAiMode(mode) {
+  aiAssistant.mode = mode
+  aiAssistant.input = ''
+  // 切换模式时提示，避免误以为还在上一个能力
+  showNotice({
+    type: 'info',
+    title: '已切换模式',
+    content: ({
+      auto: '自动：由大模型语义识别意图（客服/挂牌/求购/风控/搜商品）',
+      support: '客服：只回答平台流程问题',
+      listing: '挂牌：只生成出售文案',
+      wanted: '求购：只生成求购文案',
+      risk: '风控：只做发布前风险预审'
+    })[mode] || mode
+  })
+}
+
+function applyAssistantFinal(msg, data) {
+  // 流式过程中已拼好的文案优先；仅当 final 更完整且无乱码替换符时再覆盖
+  const finalAnswer = typeof data.answer === 'string' ? data.answer.replace(/\uFFFD/g, '') : ''
+  if (finalAnswer) {
+    const streamed = (msg.content || '').replace(/\uFFFD/g, '')
+    if (!streamed || finalAnswer.length >= streamed.length) {
+      msg.content = finalAnswer
+    } else {
+      msg.content = streamed
+    }
+  }
+  msg.intent = data.intent || msg.intent || ''
+  msg.citations = data.citations || []
+  msg.listing = data.listing || null
+  msg.wanted = data.wanted || null
+  msg.risk = data.risk || null
+  msg.products = (data.products || []).map((item) => ({
+    ...item,
+    coverUrl: normalizeMediaUrl(item.coverUrl || item.cover_url || '')
+  }))
+  msg.agentTrace = data.agentTrace || data.agent_trace || []
+  msg.llmEnabled = Boolean(data.llmEnabled ?? data.llm_enabled)
+  if (data.listing) aiAssistant.lastListing = data.listing
+  if (data.wanted) aiAssistant.lastWanted = data.wanted
+  aiAssistant.llmEnabled = Boolean(data.llmEnabled ?? data.llm_enabled)
+}
+
+async function sendAiMessageStreaming(content, historyPayload) {
+  const token = sessionStorage.getItem(TOKEN_KEY)
+  const assistantMsg = reactive({
+    id: `a-${Date.now()}`,
+    role: 'assistant',
+    content: '',
+    intent: '',
+    citations: [],
+    listing: null,
+    wanted: null,
+    risk: null,
+    products: [],
+    agentTrace: [],
+    streaming: true,
+    statusText: '正在思考…'
+  })
+  aiAssistant.messages.push(assistantMsg)
+  await scrollAiChatToBottom()
+
+  const response = await fetch(`${API_BASE}/ai/chat/stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    },
+    body: JSON.stringify({
+      message: content,
+      mode: aiAssistant.mode,
+      history: historyPayload
+    })
+  })
+  if (!response.ok || !response.body) {
+    const errText = await response.text().catch(() => '')
+    throw new Error(errText || `流式请求失败：${response.status}`)
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder('utf-8')
+  let buffer = ''
+  let currentEvent = ''
+  let dataLines = []
+  let gotFirstToken = false
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    const parts = buffer.split('\n')
+    buffer = parts.pop() || ''
+    for (const line of parts) {
+      if (line.startsWith('event:')) {
+        currentEvent = line.slice(6).trim()
+      } else if (line.startsWith('data:')) {
+        dataLines.push(line.slice(5).trim())
+      } else if (line === '') {
+        const raw = dataLines.join('\n')
+        const ev = currentEvent
+        currentEvent = ''
+        dataLines = []
+        if (!raw) continue
+        let payload = null
+        try {
+          payload = JSON.parse(raw)
+        } catch {
+          continue
+        }
+        if (ev === 'status' && payload?.text) {
+          assistantMsg.statusText = payload.text
+          scrollAiChatToBottom()
+        } else if (ev === 'token' && payload?.text) {
+          if (!gotFirstToken) {
+            gotFirstToken = true
+            assistantMsg.statusText = ''
+            // 首字到达后结束「思考中」按钮态，改为边生成边显示
+            aiAssistant.loading = false
+          }
+          assistantMsg.content += payload.text
+          scrollAiChatToBottom()
+          await new Promise((r) => setTimeout(r, 8))
+        } else if (ev === 'meta' && payload?.intent) {
+          assistantMsg.intent = payload.intent
+          assistantMsg.statusText = assistantMsg.statusText || '正在组织回答…'
+        } else if (ev === 'final') {
+          applyAssistantFinal(assistantMsg, payload)
+          assistantMsg.statusText = ''
+        } else if (ev === 'error') {
+          throw new Error(payload?.message || 'AI 流式输出失败')
+        }
+      }
+    }
+  }
+  assistantMsg.streaming = false
+  assistantMsg.statusText = ''
+  saveAiChatHistory()
+}
+
+async function sendAiMessage() {
+  const content = aiAssistant.input.trim()
+  if (!content) {
+    showNotice({ type: 'error', title: '提示', content: '请输入问题或描述' })
+    return
+  }
+  if (!aiAssistant.userId && currentUser.value?.id) {
+    aiAssistant.userId = currentUser.value.id
+    await loadAiChatHistoryFromServer(aiAssistant.userId)
+  }
+  const historyPayload = aiAssistant.messages
+    .filter((item) => item.role === 'user' || item.role === 'assistant')
+    .slice(-10)
+    .map((item) => ({ role: item.role, content: item.content }))
+
+  aiAssistant.messages.push({
+    id: `u-${Date.now()}`,
+    role: 'user',
+    content
+  })
+  aiAssistant.input = ''
+  aiAssistant.loading = true
+  saveAiChatHistory()
+  await scrollAiChatToBottom()
+  try {
+    await sendAiMessageStreaming(content, historyPayload)
+  } catch (streamError) {
+    try {
+      const data = await apiRequest('/ai/chat', {
+        method: 'POST',
+        body: JSON.stringify({
+          message: content,
+          mode: aiAssistant.mode,
+          history: historyPayload
+        })
+      })
+      // 若流式已插入空气泡则更新最后一条，否则新建
+      const last = aiAssistant.messages[aiAssistant.messages.length - 1]
+      if (last && last.role === 'assistant' && last.streaming) {
+        applyAssistantFinal(last, data)
+        last.streaming = false
+      } else {
+        const msg = { id: `a-${Date.now()}`, role: 'assistant', content: '' }
+        applyAssistantFinal(msg, data)
+        aiAssistant.messages.push(msg)
+      }
+      saveAiChatHistory()
+    } catch (error) {
+      aiAssistant.messages.push({
+        id: `e-${Date.now()}`,
+        role: 'assistant',
+        content: error.message || streamError.message || 'AI 客服暂时不可用',
+        isError: true
+      })
+      saveAiChatHistory()
+      showNotice({ type: 'error', title: 'AI 客服', content: error.message || streamError.message })
+    }
+  } finally {
+    aiAssistant.loading = false
+    await scrollAiChatToBottom()
+  }
+}
+
+async function openAiProductCard(product) {
+  closeAiAssistant()
+  await openProductDetail(product)
+}
+
+function applyAiListingToPublish(listing) {
+  const data = listing || aiAssistant.lastListing
+  if (!data) return
+  if (data.title) productForm.title = String(data.title)
+  if (data.description) productForm.description = String(data.description)
+  const conditionMap = {
+    全新: 'NEW',
+    几乎全新: 'LIKE_NEW',
+    成色较好: 'GOOD',
+    有使用痕迹: 'FAIR',
+    旧一些: 'POOR'
+  }
+  const hint = data.condition_hint || data.conditionHint
+  if (hint && conditionMap[hint]) {
+    productForm.conditionLevel = conditionMap[hint]
+  }
+  const categoryHint = data.category_hint || data.categoryHint
+  if (categoryHint && categories.value.length) {
+    const matched = categories.value.find((item) => item.name.includes(String(categoryHint)) || String(categoryHint).includes(item.name))
+    if (matched) productForm.categoryId = matched.id
+  }
+  if (data.price_hint != null || data.priceHint != null) {
+    productForm.price = String(data.price_hint ?? data.priceHint)
+  }
+  closeAiAssistant()
+  activeStudentTab.value = 'publish'
+  showNotice({ type: 'success', title: '已填入', content: '挂牌建议已写入发布页，请确认后提交' })
+}
+
+function applyAiWantedToForm(wanted) {
+  const data = wanted || aiAssistant.lastWanted
+  if (!data) return
+  const conditionMap = {
+    全新: 'NEW',
+    几乎全新: 'LIKE_NEW',
+    成色较好: 'GOOD',
+    有使用痕迹: 'FAIR',
+    旧一些: 'POOR'
+  }
+  editingWantedId.value = null
+  showWantedForm.value = true
+  const itemName = data.item_name || data.itemName
+  if (itemName) wantedForm.itemName = String(itemName)
+  const budget = data.budget_hint ?? data.budgetHint
+  if (budget != null && budget !== '') wantedForm.budget = String(budget)
+  const hint = data.condition_hint || data.conditionHint
+  if (hint && conditionMap[hint]) {
+    wantedForm.expectCondition = conditionMap[hint]
+  }
+  if (data.description) wantedForm.description = String(data.description)
+  closeAiAssistant()
+  activeStudentTab.value = 'wanted'
+  showNotice({ type: 'success', title: '已填入', content: '求购建议已写入求购页，请确认后发布' })
+}
+
 function updateCurrentUser(user) {
   currentUser.id = user?.id || null
   currentUser.username = user?.username || ''
@@ -262,6 +676,16 @@ function updateCurrentUser(user) {
   currentUser.college = user?.college || ''
   currentUser.authRemark = user?.authRemark || ''
   currentUser.status = user?.status || ''
+  if (user?.id) {
+    if (aiAssistant.userId !== user.id) {
+      aiAssistant.userId = user.id
+      loadAiChatHistoryFromServer(user.id)
+    }
+  } else {
+    aiAssistant.userId = null
+    aiAssistant.messages = []
+    aiAssistant.visible = false
+  }
   resetOrderForm()
 }
 
@@ -728,7 +1152,7 @@ async function runAiAudit(product) {
     const result = await apiRequest(`/ai-audit/products/${product.id}`, { method: 'POST' })
     aiAuditMap.value[product.id] = result
     aiAuditLogs.value = [result]
-    message.value = `关键词审核完成：${getAiSuggestionLabel(result.suggestion)}`
+    message.value = `AI 风控审核完成：${getAiSuggestionLabel(result.suggestion)}`
   } catch (error) {
     showNotice({ type: 'error', title: '操作失败', content: error.message })
   } finally {
@@ -1602,7 +2026,9 @@ function logout() {
   updateCurrentUser({ role: 'STUDENT', authStatus: 'UNAUTH' })
 }
 
-onMounted(loadMe)
+onMounted(() => {
+  loadMe()
+})
 </script>
 
 <template>
@@ -1836,7 +2262,62 @@ onMounted(loadMe)
           <div class="action-list">
             <button class="primary-button" type="button" @click="openAuthPage">{{ currentUser.authStatus === 'UNAUTH' ? '去实名认证' : '查看/更新认证信息' }}</button>
             <button class="secondary-button" type="button" @click="activeStudentTab = 'publish'">发布商品</button>
+            <button class="secondary-button" type="button" @click="openAiAssistantFromProfile">打开 AI 客服</button>
           </div>
+
+          <section class="section-block ai-profile-panel">
+            <div class="section-title">
+              <h2>AI 客服</h2>
+              <button class="text-button" type="button" @click="clearAiChatHistory">清空记录</button>
+            </div>
+            <p class="hint">对话按账号隔离保存。可继续提问，记录会向下滚动保留。</p>
+            <div class="ai-mode-tabs compact">
+              <button
+                v-for="item in aiModes"
+                :key="`p-${item.id}`"
+                type="button"
+                :class="{ active: aiAssistant.mode === item.id }"
+                @click="selectAiMode(item.id)"
+              >
+                <strong>{{ item.title }}</strong>
+                <small>{{ item.desc }}</small>
+              </button>
+            </div>
+            <div ref="aiChatListRef" class="ai-chat-list">
+              <div v-if="aiAssistant.messages.length === 0" class="empty-state">{{ aiEmptyHint }}</div>
+              <article
+                v-for="msg in aiAssistant.messages"
+                :key="msg.id"
+                :class="['ai-chat-bubble', msg.role === 'user' ? 'is-user' : 'is-bot', { 'is-error': msg.isError }]"
+              >
+                <p class="ai-answer">{{ msg.content || msg.statusText || '' }}</p>
+                <p v-if="msg.statusText && !msg.content" class="hint">请稍候，正在生成…</p>
+                <p v-if="msg.intent" class="hint">意图：{{ msg.intent }}</p>
+                <div v-if="msg.products?.length" class="ai-product-cards">
+                  <article
+                    v-for="product in msg.products"
+                    :key="`${msg.id}-${product.id}`"
+                    class="ai-product-card"
+                    @click="openAiProductCard(product)"
+                  >
+                    <img v-if="product.coverUrl" :src="normalizeMediaUrl(product.coverUrl)" :alt="product.title" />
+                    <div v-else class="image-placeholder">闲</div>
+                    <div>
+                      <strong>{{ product.title }}</strong>
+                      <b>￥{{ product.price }}</b>
+                      <small>{{ product.description || '点击查看详情' }}</small>
+                    </div>
+                  </article>
+                </div>
+                <button v-if="msg.listing" class="secondary-button" type="button" @click="applyAiListingToPublish(msg.listing)">填入发布页</button>
+                <button v-if="msg.wanted" class="secondary-button" type="button" @click="applyAiWantedToForm(msg.wanted)">填入求购页</button>
+              </article>
+            </div>
+            <form class="ai-chat-composer" @submit.prevent="sendAiMessage">
+              <textarea v-model.trim="aiAssistant.input" rows="3" :placeholder="aiPlaceholder"></textarea>
+              <button class="primary-button" type="submit" :disabled="aiBusy">{{ aiSendLabel }}</button>
+            </form>
+          </section>
 
           <section class="section-block">
             <div class="section-title">
@@ -1956,14 +2437,14 @@ onMounted(loadMe)
               <p>￥{{ product.price }} · {{ product.seller?.nickname || '卖家' }}</p>
               <p>{{ product.description }}</p>
               <div v-if="aiAuditMap[product.id]" :class="['ai-audit-box', getAiRiskClass(aiAuditMap[product.id].riskLevel)]">
-                <p><strong>关键词辅助审核</strong> · {{ getAiSuggestionLabel(aiAuditMap[product.id].suggestion) }} · {{ aiAuditMap[product.id].riskLevel }}</p>
+                <p><strong>AI 风控审核</strong> · {{ getAiSuggestionLabel(aiAuditMap[product.id].suggestion) }} · {{ aiAuditMap[product.id].riskLevel }}</p>
                 <p>{{ aiAuditMap[product.id].reason }}</p>
               </div>
             </div>
             <div class="review-actions" v-if="productReviewStatus === 'PENDING'">
               <button type="button" @click="auditProduct(product, 'PUBLISHED')">通过</button>
               <button type="button" @click="auditProduct(product, 'REJECTED')">拒绝</button>
-              <button type="button" @click="runAiAudit(product)">执行关键词审核</button>
+              <button type="button" @click="runAiAudit(product)">执行 AI 风控审核</button>
               <button type="button" @click="loadAiAuditLogs(product.id)">查看记录</button>
             </div>
             <div v-if="aiAuditLogs.length && aiAuditLogs[0]?.productId === product.id" class="ai-audit-box">
@@ -2209,6 +2690,68 @@ onMounted(loadMe)
 
     <div v-if="publicProfile" class="confirm-overlay" role="dialog" aria-modal="true" @click.self="closePublicProfile">
       <section class="profile-dialog"><button class="detail-close" @click="closePublicProfile">×</button><header class="public-profile-head"><span class="public-avatar large"><img v-if="publicProfile.avatarUrl" :src="publicProfile.avatarUrl" alt="" /><b v-else>{{ avatarText(publicProfile) }}</b></span><div><p class="eyebrow">公开主页</p><h2>{{ publicProfile.nickname }}</h2><p>{{ publicProfile.college || '校园学生' }} · {{ publicProfile.authStatus === 'APPROVED' ? '已认证学生' : '未认证' }}</p></div></header><div v-if="profileLoading" class="empty-state">正在加载主页...</div><template v-else><section class="profile-section"><h3>TA 的商品 <span>{{ profileProducts.length }}</span></h3><div v-if="profileProducts.length === 0" class="empty-state">暂无公开商品</div><div class="profile-card-grid"><article v-for="product in profileProducts" :key="product.id" class="profile-item" @click="openProductDetail(product)"><img v-if="firstProductImage(product)" :src="firstProductImage(product)" :alt="product.title" /><div v-else class="image-placeholder">闲</div><strong>{{ product.title }}</strong><b>￥{{ product.price }}</b></article></div></section><section class="profile-section"><h3>TA 的求购 <span>{{ profileWanted.length }}</span></h3><div v-if="profileWanted.length === 0" class="empty-state">暂无公开求购</div><article v-for="item in profileWanted" :key="item.id" class="profile-wanted" @click="openWantedDetail(item)"><div><strong>{{ item.itemName }}</strong><b>预算 ￥{{ item.budget }}</b></div><span>{{ getWantedStatusLabel(item.status) }} · {{ item.campusId ? getCampusName(item.campusId) : '不限校区' }}</span></article></section></template></section>
+    </div>
+
+    <div v-if="aiAssistant.visible" class="confirm-overlay report-overlay" role="dialog" aria-modal="true">
+      <form class="remark-dialog ai-assistant-dialog" @submit.prevent="sendAiMessage">
+        <h2>AI 客服</h2>
+        <p class="intro">
+          Multi-Agent：自动路由客服 / 挂牌文案 / 风控 / 搜商品。
+          <template v-if="aiAssistant.llmEnabled">当前已接入大模型{{ aiAssistant.llmModel ? `（${aiAssistant.llmModel}）` : '' }}。</template>
+          <template v-else>未检测到大模型密钥，目前为离线 FAQ / 规则模式。</template>
+          对话按用户 ID 保存，可向下滚动查看历史。
+        </p>
+        <div class="ai-mode-tabs">
+          <button
+            v-for="item in aiModes"
+            :key="item.id"
+            type="button"
+            :class="{ active: aiAssistant.mode === item.id }"
+            @click="selectAiMode(item.id)"
+          >
+            <strong>{{ item.title }}</strong>
+            <small>{{ item.desc }}</small>
+          </button>
+        </div>
+        <div class="ai-chat-list modal-chat">
+          <div v-if="aiAssistant.messages.length === 0" class="empty-state">{{ aiEmptyHint }}</div>
+          <article
+            v-for="msg in aiAssistant.messages"
+            :key="`m-${msg.id}`"
+            :class="['ai-chat-bubble', msg.role === 'user' ? 'is-user' : 'is-bot', { 'is-error': msg.isError }]"
+          >
+            <p class="ai-answer">{{ msg.content || msg.statusText || '' }}</p>
+            <p v-if="msg.statusText && !msg.content" class="hint">请稍候，正在生成…</p>
+            <p v-if="msg.intent" class="hint">意图：{{ msg.intent }}</p>
+            <div v-if="msg.products?.length" class="ai-product-cards">
+              <article
+                v-for="product in msg.products"
+                :key="`m-${msg.id}-${product.id}`"
+                class="ai-product-card"
+                @click="openAiProductCard(product)"
+              >
+                <img v-if="product.coverUrl" :src="normalizeMediaUrl(product.coverUrl)" :alt="product.title" />
+                <div v-else class="image-placeholder">闲</div>
+                <div>
+                  <strong>{{ product.title }}</strong>
+                  <b>￥{{ product.price }}</b>
+                  <small>{{ product.description || '点击查看详情' }}</small>
+                </div>
+              </article>
+            </div>
+            <button v-if="msg.listing" class="secondary-button" type="button" @click="applyAiListingToPublish(msg.listing)">填入发布页</button>
+            <button v-if="msg.wanted" class="secondary-button" type="button" @click="applyAiWantedToForm(msg.wanted)">填入求购页</button>
+          </article>
+        </div>
+        <label>继续提问
+          <textarea v-model.trim="aiAssistant.input" rows="3" :placeholder="aiPlaceholder"></textarea>
+        </label>
+        <div class="confirm-actions">
+          <button class="secondary-button" type="button" @click="closeAiAssistant">关闭</button>
+          <button class="text-button" type="button" @click="clearAiChatHistory">清空记录</button>
+          <button class="primary-button" type="submit" :disabled="aiBusy">{{ aiSendLabel }}</button>
+        </div>
+      </form>
     </div>
   </main>
 </template>

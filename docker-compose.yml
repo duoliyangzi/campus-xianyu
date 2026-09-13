@@ -1,7 +1,15 @@
 # 仅用于 Cloud Studio / 本地快速起 MySQL（开发库）
 # 生产或答辩公网更推荐轻量云主机；本文件方便今天先把库建起来。
+# redis / ai-service 为 AI 方案 B 可选组件；本机无 Docker 时可单独 pip 启动 ai-service。
 
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: campus-xianyu-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
   mysql:
     image: mysql:8.0
     container_name: campus-xianyu-mysql

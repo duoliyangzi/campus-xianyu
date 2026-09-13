@@ -1,0 +1,765 @@
+{
+  "generated_at": "2026-09-13 12:09:43",
+  "difficulty_filter": "all",
+  "intent": {
+    "name": "intent",
+    "total": 27,
+    "accuracy": 0.963,
+    "keyword_hit_rate": 1.0,
+    "by_difficulty": {
+      "all": {
+        "total": 27,
+        "accuracy": 0.963,
+        "keyword_hit_rate": 1.0
+      },
+      "easy": {
+        "total": 15,
+        "accuracy": 1.0,
+        "keyword_hit_rate": 1.0
+      },
+      "hard": {
+        "total": 12,
+        "accuracy": 0.9167,
+        "keyword_hit_rate": 1.0
+      }
+    },
+    "latency_s": 44.99,
+    "rows": [
+      {
+        "id": "i01",
+        "difficulty": "easy",
+        "message": "如何实名认证",
+        "expect": "support",
+        "pred": "support",
+        "keyword": "",
+        "source": "llm",
+        "intent_ok": true,
+        "keyword_ok": null
+      },
+      {
+        "id": "i02",
+        "difficulty": "easy",
+        "message": "订单待沟通后怎么确认",
+        "expect": "support",
+        "pred": "support",
+        "keyword": "",
+        "source": "llm",
+        "intent_ok": true,
+        "keyword_ok": null
+      },
+      {
+        "id": "i03",
+        "difficulty": "easy",
+        "message": "怎么举报商家",
+        "expect": "support",
+        "pred": "support",
+        "keyword": "",
+        "source": "llm",
+        "intent_ok": true,
+        "keyword_ok": null
+      },
+      {
+        "id": "i04",
+        "difficulty": "easy",
+        "message": "现在有手机卖吗",
+        "expect": "search",
+        "pred": "search",
+        "keyword": "手机",
+        "source": "llm",
+        "intent_ok": true,
+        "keyword_ok": true
+      },
+      {
+        "id": "i05",
+        "difficulty": "easy",
+        "message": "想买服装",
+        "expect": "search",
+        "pred": "search",
+        "keyword": "服装",
+        "source": "llm",
+        "intent_ok": true,
+        "keyword_ok": true
+      },
+      {
+        "id": "i06",
+        "difficulty": "easy",
+        "message": "有没有台灯",
+        "expect": "search",
+        "pred": "search",
+        "keyword": "台灯",
+        "source": "llm",
+        "intent_ok": true,
+        "keyword_ok": true
+      },
+      {
+        "id": "i07",
+        "difficulty": "easy",
+        "message": "帮我找二手自行车",
+        "expect": "search",
+        "pred": "search",
+        "keyword": "自行车",
+        "source": "llm",
+        "intent_ok": true,
+        "keyword_ok": true
+      },
+      {
+        "id": "i08",
+        "difficulty": "easy",
+        "message": "出闲置高数第七版九成新",
+        "expect": "listing",
+        "pred": "listing",
+        "keyword": "",
+        "source": "llm",
+        "intent_ok": true,
+        "keyword_ok": null
+      },
+      {
+        "id": "i09",
+        "difficulty": "easy",
+        "message": "帮我写个出售文案：九成新鼠标",
+        "expect": "listing",
+        "pred": "listing",
+        "keyword": "",
+        "source": "llm",
+        "intent_ok": true,
+        "keyword_ok": null
+      },
+      {
+        "id": "i10",
+        "difficulty": "easy",
+        "message": "帮我发一条求购跳绳，预算30",
+        "expect": "wanted",
+        "pred": "wanted",
+        "keyword": "",
+        "source": "llm",
+        "intent_ok": true,
+        "keyword_ok": null
+      },
+      {
+        "id": "i11",
+        "difficulty": "easy",
+        "message": "发布求购台灯",
+        "expect": "wanted",
+        "pred": "wanted",
+        "keyword": "",
+        "source": "llm",
+        "intent_ok": true,
+        "keyword_ok": null
+      },
+      {
+        "id": "i12",
+        "difficulty": "easy",
+        "message": "这段能不能发：九成新手机加微信私聊便宜出",
+        "expect": "risk",
+        "pred": "risk",
+        "keyword": "",
+        "source": "llm",
+        "intent_ok": true,
+        "keyword_ok": null
+      },
+      {
+        "id": "i13",
+        "difficulty": "easy",
+        "message": "帮我预审一下标题和描述",
+        "expect": "risk",
+        "pred": "risk",
+        "keyword": "",
+        "source": "llm",
+        "intent_ok": true,
+        "keyword_ok": null
+      },
+      {
+        "id": "i14",
+        "difficulty": "easy",
+        "message": "想买手机，有现货吗",
+        "expect": "search",
+        "pred": "search",
+        "keyword": "手机",
+        "source": "llm",
+        "intent_ok": true,
+        "keyword_ok": true
+      },
+      {
+        "id": "i15",
+        "difficulty": "easy",
+        "message": "退货退款怎么处理",
+        "expect": "support",
+        "pred": "support",
+        "keyword": "",
+        "source": "llm",
+        "intent_ok": true,
+        "keyword_ok": null
+      },
+      {
+        "id": "i16",
+        "difficulty": "hard",
+        "message": "想买手机，但我还没实名，先告诉我怎么认证",
+        "expect": "support",
+        "pred": "support",
+        "keyword": "",
+        "source": "llm",
+        "intent_ok": true,
+        "keyword_ok": null
+      },
+      {
+        "id": "i17",
+        "difficulty": "hard",
+        "message": "我要卖耳机，顺便看看现在平台有没有同款在卖",
+        "expect": "listing",
+        "pred": "search",
+        "keyword": "耳机",
+        "source": "llm",
+        "intent_ok": false,
+        "keyword_ok": null
+      },
+      {
+        "id": "i18",
+        "difficulty": "hard",
+        "message": "不是求购帖，就是想看看有没有人出相机",
+        "expect": "search",
+        "pred": "search",
+        "keyword": "相机",
+        "source": "llm",
+        "intent_ok": true,
+        "keyword_ok": true
+      },
+      {
+        "id": "i19",
+        "difficulty": "hard",
+        "message": "求购？不，我是想把手里的键盘挂出去",
+        "expect": "listing",
+        "pred": "listing",
+        "keyword": "",
+        "source": "llm",
+        "intent_ok": true,
+        "keyword_ok": null
+      },
+      {
+        "id": "i20",
+        "difficulty": "hard",
+        "message": "标题写「出手机」描述里别加微信号，帮我看看能不能过审",
+        "expect": "risk",
+        "pred": "risk",
+        "keyword": "",
+        "source": "llm",
+        "intent_ok": true,
+        "keyword_ok": null
+      },
+      {
+        "id": "i21",
+        "difficulty": "hard",
+        "message": "宿舍缺个小风扇，先别发求购，先帮我搜现货",
+        "expect": "search",
+        "pred": "search",
+        "keyword": "小风扇",
+        "source": "llm",
+        "intent_ok": true,
+        "keyword_ok": true
+      },
+      {
+        "id": "i22",
+        "difficulty": "hard",
+        "message": "认证过了吗这个问题我知道，我想发求购二手显示器",
+        "expect": "wanted",
+        "pred": "wanted",
+        "keyword": "",
+        "source": "llm",
+        "intent_ok": true,
+        "keyword_ok": null
+      },
+      {
+        "id": "i23",
+        "difficulty": "hard",
+        "message": "帮我看看这段话违规不：九成新教材校内面交",
+        "expect": "risk",
+        "pred": "risk",
+        "keyword": "",
+        "source": "llm",
+        "intent_ok": true,
+        "keyword_ok": null
+      },
+      {
+        "id": "i24",
+        "difficulty": "hard",
+        "message": "有人收跳绳吗——不对，我是想发求购",
+        "expect": "wanted",
+        "pred": "wanted",
+        "keyword": "",
+        "source": "llm",
+        "intent_ok": true,
+        "keyword_ok": null
+      },
+      {
+        "id": "i25",
+        "difficulty": "hard",
+        "message": "我想买，但更想先问订单确认失败了怎么办",
+        "expect": "support",
+        "pred": "support",
+        "keyword": "",
+        "source": "llm",
+        "intent_ok": true,
+        "keyword_ok": null
+      },
+      {
+        "id": "i26",
+        "difficulty": "hard",
+        "message": "把「出闲置台灯」写成能直接粘贴到发布页的标题和描述",
+        "expect": "listing",
+        "pred": "listing",
+        "keyword": "",
+        "source": "llm",
+        "intent_ok": true,
+        "keyword_ok": null
+      },
+      {
+        "id": "i27",
+        "difficulty": "hard",
+        "message": "校园里能买到二手平板吗，别给我生成求购文案",
+        "expect": "search",
+        "pred": "search",
+        "keyword": "平板",
+        "source": "llm",
+        "intent_ok": true,
+        "keyword_ok": true
+      }
+    ]
+  },
+  "rag": {
+    "name": "rag",
+    "total": 15,
+    "hit_at_1": 0.8667,
+    "hit_at_k": 1.0,
+    "top_k": 3,
+    "by_difficulty": {
+      "all": {
+        "total": 15,
+        "hit_at_1": 0.8667,
+        "hit_at_k": 1.0
+      },
+      "easy": {
+        "total": 8,
+        "hit_at_1": 0.875,
+        "hit_at_k": 1.0
+      },
+      "hard": {
+        "total": 7,
+        "hit_at_1": 0.8571,
+        "hit_at_k": 1.0
+      }
+    },
+    "latency_s": 2.74,
+    "rows": [
+      {
+        "id": "r01",
+        "difficulty": "easy",
+        "message": "如何实名认证",
+        "hit@1": true,
+        "hit@k": true,
+        "top_titles": [
+          "如何实名认证",
+          "如何注册登录",
+          "如何发布商品"
+        ],
+        "backend": "chroma"
+      },
+      {
+        "id": "r02",
+        "difficulty": "easy",
+        "message": "订单待沟通后怎么确认",
+        "hit@1": true,
+        "hit@k": true,
+        "top_titles": [
+          "订单状态说明",
+          "如何下单与完成交易",
+          "退货退款与取消"
+        ],
+        "backend": "chroma"
+      },
+      {
+        "id": "r03",
+        "difficulty": "easy",
+        "message": "如何发布商品",
+        "hit@1": true,
+        "hit@k": true,
+        "top_titles": [
+          "如何发布商品",
+          "如何留言",
+          "如何求购"
+        ],
+        "backend": "chroma"
+      },
+      {
+        "id": "r04",
+        "difficulty": "easy",
+        "message": "怎么举报",
+        "hit@1": true,
+        "hit@k": true,
+        "top_titles": [
+          "如何举报",
+          "退货退款与取消",
+          "如何私聊"
+        ],
+        "backend": "chroma"
+      },
+      {
+        "id": "r05",
+        "difficulty": "easy",
+        "message": "退货退款怎么办",
+        "hit@1": true,
+        "hit@k": true,
+        "top_titles": [
+          "退货退款与取消",
+          "如何举报",
+          "无法回答或需拒绝编造的内容"
+        ],
+        "backend": "chroma"
+      },
+      {
+        "id": "r06",
+        "difficulty": "easy",
+        "message": "如何私聊卖家",
+        "hit@1": true,
+        "hit@k": true,
+        "top_titles": [
+          "如何私聊",
+          "如何留言",
+          "如何求购"
+        ],
+        "backend": "chroma"
+      },
+      {
+        "id": "r07",
+        "difficulty": "easy",
+        "message": "首页怎么找商品",
+        "hit@1": true,
+        "hit@k": true,
+        "top_titles": [
+          "首页如何找商品",
+          "分类与校区",
+          "如何发布商品"
+        ],
+        "backend": "chroma"
+      },
+      {
+        "id": "r08",
+        "difficulty": "easy",
+        "message": "平台支不支持担保交易",
+        "hit@1": false,
+        "hit@k": true,
+        "top_titles": [
+          "无法回答或需拒绝编造的内容",
+          "退货退款与取消",
+          "平台是什么"
+        ],
+        "backend": "chroma"
+      },
+      {
+        "id": "r09",
+        "difficulty": "hard",
+        "message": "学号填错了被拒，还能再交材料吗",
+        "hit@1": true,
+        "hit@k": true,
+        "top_titles": [
+          "如何实名认证",
+          "无法回答或需拒绝编造的内容",
+          "如何举报"
+        ],
+        "backend": "chroma"
+      },
+      {
+        "id": "r10",
+        "difficulty": "hard",
+        "message": "买卖双方都点确认之后是什么状态",
+        "hit@1": true,
+        "hit@k": true,
+        "top_titles": [
+          "订单状态说明",
+          "如何下单与完成交易",
+          "商品状态说明"
+        ],
+        "backend": "chroma"
+      },
+      {
+        "id": "r11",
+        "difficulty": "hard",
+        "message": "管理员拒了商品我还能改再发吗",
+        "hit@1": true,
+        "hit@k": true,
+        "top_titles": [
+          "管理员审核商品",
+          "退货退款与取消",
+          "商品状态说明"
+        ],
+        "backend": "chroma"
+      },
+      {
+        "id": "r12",
+        "difficulty": "hard",
+        "message": "钱能不能走平台代收再给卖家",
+        "hit@1": false,
+        "hit@k": true,
+        "top_titles": [
+          "无法回答或需拒绝编造的内容",
+          "如何下单与完成交易",
+          "退货退款与取消"
+        ],
+        "backend": "chroma"
+      },
+      {
+        "id": "r13",
+        "difficulty": "hard",
+        "message": "没认证能留言问价吗",
+        "hit@1": true,
+        "hit@k": true,
+        "top_titles": [
+          "如何留言",
+          "如何实名认证",
+          "如何求购"
+        ],
+        "backend": "chroma"
+      },
+      {
+        "id": "r14",
+        "difficulty": "hard",
+        "message": "求购标记已找到卖家是什么意思",
+        "hit@1": true,
+        "hit@k": true,
+        "top_titles": [
+          "如何求购",
+          "订单状态说明",
+          "商品状态说明"
+        ],
+        "backend": "chroma"
+      },
+      {
+        "id": "r15",
+        "difficulty": "hard",
+        "message": "AI助手能直接帮我下单付款吗",
+        "hit@1": true,
+        "hit@k": true,
+        "top_titles": [
+          "AI 客服能做什么",
+          "如何下单与完成交易",
+          "管理员审核商品"
+        ],
+        "backend": "chroma"
+      }
+    ]
+  },
+  "risk": {
+    "name": "risk",
+    "total": 16,
+    "agreement": 1.0,
+    "reject_precision": 1.0,
+    "reject_recall": 1.0,
+    "by_difficulty": {
+      "all": {
+        "total": 16,
+        "agreement": 1.0,
+        "reject_precision": 1.0,
+        "reject_recall": 1.0
+      },
+      "easy": {
+        "total": 8,
+        "agreement": 1.0,
+        "reject_precision": 1.0,
+        "reject_recall": 1.0
+      },
+      "hard": {
+        "total": 8,
+        "agreement": 1.0,
+        "reject_precision": 1.0,
+        "reject_recall": 1.0
+      }
+    },
+    "latency_s": 22.78,
+    "rows": [
+      {
+        "id": "k01",
+        "difficulty": "easy",
+        "message": "九成新高等数学教材，校内面交",
+        "expect": [
+          "PASS"
+        ],
+        "pred": "PASS",
+        "risk_level": "NONE",
+        "ok": true
+      },
+      {
+        "id": "k02",
+        "difficulty": "easy",
+        "message": "几乎全新台灯，希望 40 元",
+        "expect": [
+          "PASS",
+          "REVIEW"
+        ],
+        "pred": "PASS",
+        "risk_level": "NONE",
+        "ok": true
+      },
+      {
+        "id": "k03",
+        "difficulty": "easy",
+        "message": "出手机，加微信私聊更便宜",
+        "expect": [
+          "REJECT",
+          "REVIEW"
+        ],
+        "pred": "REVIEW",
+        "risk_level": "MEDIUM",
+        "ok": true
+      },
+      {
+        "id": "k04",
+        "difficulty": "easy",
+        "message": "想要一个傻逼人",
+        "expect": [
+          "REJECT"
+        ],
+        "pred": "REJECT",
+        "risk_level": "HIGH",
+        "ok": true
+      },
+      {
+        "id": "k05",
+        "difficulty": "easy",
+        "message": "你这个骚逼卖家",
+        "expect": [
+          "REJECT"
+        ],
+        "pred": "REJECT",
+        "risk_level": "HIGH",
+        "ok": true
+      },
+      {
+        "id": "k06",
+        "difficulty": "easy",
+        "message": "包过四级代考联系我",
+        "expect": [
+          "REJECT",
+          "REVIEW"
+        ],
+        "pred": "REJECT",
+        "risk_level": "HIGH",
+        "ok": true
+      },
+      {
+        "id": "k07",
+        "difficulty": "easy",
+        "message": "出",
+        "expect": [
+          "PASS",
+          "REVIEW"
+        ],
+        "pred": "REVIEW",
+        "risk_level": "LOW",
+        "ok": true
+      },
+      {
+        "id": "k08",
+        "difficulty": "easy",
+        "message": "九成新自行车，宿舍楼下交易",
+        "expect": [
+          "PASS"
+        ],
+        "pred": "PASS",
+        "risk_level": "NONE",
+        "ok": true
+      },
+      {
+        "id": "k09",
+        "difficulty": "hard",
+        "message": "出手机，VX同号详聊",
+        "expect": [
+          "REJECT",
+          "REVIEW"
+        ],
+        "pred": "REVIEW",
+        "risk_level": "LOW",
+        "ok": true
+      },
+      {
+        "id": "k10",
+        "difficulty": "hard",
+        "message": "出闲置，沙比勿扰认真买的来",
+        "expect": [
+          "REJECT"
+        ],
+        "pred": "REJECT",
+        "risk_level": "HIGH",
+        "ok": true
+      },
+      {
+        "id": "k11",
+        "difficulty": "hard",
+        "message": "四级保过名额，私聊付款",
+        "expect": [
+          "REJECT",
+          "REVIEW"
+        ],
+        "pred": "REJECT",
+        "risk_level": "HIGH",
+        "ok": true
+      },
+      {
+        "id": "k12",
+        "difficulty": "hard",
+        "message": "九成新耳机，图书馆门口当面验货",
+        "expect": [
+          "PASS"
+        ],
+        "pred": "PASS",
+        "risk_level": "NONE",
+        "ok": true
+      },
+      {
+        "id": "k13",
+        "difficulty": "hard",
+        "message": "便宜出，加我v：campus666",
+        "expect": [
+          "REJECT",
+          "REVIEW"
+        ],
+        "pred": "REVIEW",
+        "risk_level": "MEDIUM",
+        "ok": true
+      },
+      {
+        "id": "k14",
+        "difficulty": "hard",
+        "message": "出课本（不含任何站外联系方式）",
+        "expect": [
+          "PASS",
+          "REVIEW"
+        ],
+        "pred": "PASS",
+        "risk_level": "NONE",
+        "ok": true
+      },
+      {
+        "id": "k15",
+        "difficulty": "hard",
+        "message": "sb勿扰",
+        "expect": [
+          "REJECT",
+          "REVIEW"
+        ],
+        "pred": "REJECT",
+        "risk_level": "HIGH",
+        "ok": true
+      },
+      {
+        "id": "k16",
+        "difficulty": "hard",
+        "message": "出售校园网代挂月卡",
+        "expect": [
+          "REJECT",
+          "REVIEW"
+        ],
+        "pred": "REVIEW",
+        "risk_level": "MEDIUM",
+        "ok": true
+      }
+    ]
+  }
+}

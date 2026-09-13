@@ -34,3 +34,12 @@ backend/.mvn-tmp/
 
 # Runtime uploaded files
 backend/uploads/
+
+# Python AI service
+ai-service/.venv/
+ai-service/**/__pycache__/
+ai-service/.env
+ai-service/.chroma/
+ai-service/logs/
+*.pyc
+.cursor/

@@ -1,0 +1,17 @@
+[Unit]
+Description=Campus Xianyu AI Service (FastAPI / LangGraph)
+After=network.target redis-server.service campus-xianyu.service
+Wants=redis-server.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/campus-xianyu/ai-service
+EnvironmentFile=-/etc/campus-xianyu-ai.env
+EnvironmentFile=-/opt/campus-xianyu/ai-service/.env
+ExecStart=/opt/campus-xianyu/ai-service/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
