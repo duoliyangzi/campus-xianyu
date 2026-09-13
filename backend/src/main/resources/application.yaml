@@ -31,3 +31,8 @@ app:
   jwt:
     secret: ${JWT_SECRET:campus-xianyu-local-development-secret-2026}
     expiration-seconds: ${JWT_EXPIRATION_SECONDS:86400}
+  ai:
+    enabled: ${AI_ENABLED:true}
+    base-url: ${AI_BASE_URL:http://127.0.0.1:8000}
+    connect-timeout-ms: ${AI_CONNECT_TIMEOUT_MS:3000}
+    read-timeout-ms: ${AI_READ_TIMEOUT_MS:120000}

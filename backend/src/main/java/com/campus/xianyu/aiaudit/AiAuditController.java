@@ -49,7 +49,7 @@ public class AiAuditController {
                 .orElseThrow(() -> new IllegalArgumentException("商品不存在"));
         AiAuditLog log = aiAuditService.audit(product);
         AiAuditLog saved = aiAuditLogRepository.save(log);
-        return ApiResponse.ok("关键词审核完成", AiAuditResponse.from(saved));
+        return ApiResponse.ok("AI 风控审核完成", AiAuditResponse.from(saved));
     }
 
     @GetMapping("/products/{productId}")
